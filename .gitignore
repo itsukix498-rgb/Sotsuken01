@@ -1,0 +1,23 @@
+# 論文PDF（著作権があるためリポジトリに含めない）。動作確認用のサンプルだけは含める
+*.pdf
+!samples/sample_paper.pdf
+
+# 抽出結果のCSV
+*_urls.csv
+
+# Python が自動で作るファイル
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# 個人用の設定
+.claude/settings.local.json
+.streamlit/secrets.toml
+.vscode/
+
+# OSが作るファイル
+Thumbs.db
+desktop.ini
+.DS_Store
