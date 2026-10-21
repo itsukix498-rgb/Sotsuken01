@@ -1,4 +1,5 @@
 pymupdf>=1.24.3
 streamlit>=1.46
 pandas
+requests
 pytest>=7.0

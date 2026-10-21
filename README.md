@@ -1,105 +1,89 @@
-# 論文PDF URL抽出スクリプト
+# Paper Data Finder（論文から公開教育データを探す）
 
-卒業研究「論文から公開教育データを自動で見つけるAIエージェント」の最初の機能です。
-学習分析系国際会議（LAK・EDM・AIED）の英語論文PDFを1本読み込み、本文中のURLをすべて一覧にします。
+卒業研究「論文から公開教育データを自動で見つけるAIエージェント」のプロトタイプです。
+学習分析系国際会議（LAK・EDM・AIED）の論文を集め、本文中のURL（データの公開先の手がかり）を一覧にします。
 
 ## できること
 
-- ページごとにテキストを抽出し、URLを抜き出す
-  - `http://` / `https://` で始まるURL
-  - `www.` で始まるURL
-  - `github.com/...` や `doi.org/...` のようなスキームなしURL（パスがあるものに限る）
-- 改行で途中が切れたURLを、可能な範囲で結合する
-- URL末尾の句読点や括弧（`. , ; : ) ]` など）を取り除く（`..._(statistics)` のように対応する括弧は残す）
-- PDF内のハイパーリンク（リンク注釈）からもURLを取得し、本文の結果と統合する
-- 同じURLは1件にまとめ、最初に出現したページ番号を記録する
-  （`github.com/a/b` と `https://github.com/a/b/` のような表記揺れも同一とみなします）
+### ① 論文を集める
+- 会議（LAK / EDM / AIED）と年を選ぶと、論文一覧（タイトル・著者・DOI・論文ページ）を取得します
+- 無料で読めるPDFがある論文は、PDFを自動で取得してURLをまとめて抽出します
+- 論文一覧・URL一覧をCSVで保存できます
+
+| 会議 | 論文一覧の取得元 | 対応年 | PDFの自動取得 |
+|---|---|---|---|
+| LAK | Crossref | 2011〜 | ほぼ不可（ACMが自動取得を禁止しているため。論文ページから手動で保存） |
+| EDM | Zenodo | 2023〜 | ほぼすべて可能（オープンアクセス） |
+| AIED | Crossref | 2015〜 | 一部のみ（オープンアクセスの論文。OpenAlexで探します） |
+
+- Google Scholar や DBLP はボット対策があり、自動収集が認められていないため使っていません
+- 相手のサーバーに負担をかけないよう、PDFは1本ずつ1秒おきに取得し、1回30本までにしています
+- 取得したPDFは保存しません（URL抽出が終わったら破棄します）
+
+### ② URLを抽出する
+- 手元のPDF（複数可）をアップロードして、URLを一覧にします
+- ①で自動取得できなかった論文（LAKなど）は、PDFを手動で保存してここでまとめて処理できます
+
+### URL抽出のルール
+- `http://` / `https://` / `www.` で始まるURLに加え、`github.com/...` `doi.org/...` のようなスキームなしURL（パスがあるもの）も拾います
+- 改行で途中が切れたURLを、可能な範囲で結合します
+- URL末尾の句読点や括弧（`. , ; : ) ]` など）を取り除きます（`..._(statistics)` のように対応する括弧は残します）
+- PDF内のハイパーリンク（リンク注釈）からもURLを取得し、本文の結果と統合します
+- 同じURLは1件にまとめ、最初に出現したページ番号を記録します
 
 ## ファイル構成
 
 ```
-app.py                    Webアプリ（Streamlit）
-extract_urls.py           本体（PDF読み込み / テキスト抽出 / URL抽出 / 出力 を関数に分割）
-tests/test_extract_urls.py  pytest のテスト
-requirements.txt          依存パッケージ
-samples/sample_paper.pdf  動作確認用のサンプルPDF
+app.py                     Webアプリの入口（合言葉の確認・ページ切り替え）
+pages/collect.py           ① 論文を集めるページ
+pages/extract.py           ② URLを抽出するページ
+ui_common.py               2つのページで共通の表示部品
+collect_papers.py          論文一覧の取得（Crossref / Zenodo / OpenAlex）とPDFの取得
+extract_urls.py            PDFからのURL抽出（コマンドラインでも使えます）
+tests/                     pytest のテスト
+samples/sample_paper.pdf   動作確認用のサンプルPDF
+.streamlit/config.toml     Webアプリの設定
+.streamlit/secrets.toml.example  合言葉の設定例
 ```
 
-## インストール
+## 手元で動かす
 
 Python 3.10 以上が必要です。
 
 ```bash
 pip install -r requirements.txt
+python -m streamlit run app.py
 ```
 
-## 実行方法（Webアプリ）
+ブラウザで http://localhost:8501 が開きます。終了するときは、ターミナルで `Ctrl + C` を押します。
 
-```bash
-streamlit run app.py
-```
+手元では合言葉を聞かれません。合言葉の画面を試したいときは、`.streamlit/secrets.toml.example` をコピーして `.streamlit/secrets.toml` を作ります。
 
-ブラウザで http://localhost:8501 が開きます（開かない場合はこのURLを手で開いてください）。
-PDFをアップロードするか「サンプルPDFで試す」を押すと、URLの一覧が表示されます。
-
-- 取得元（本文テキスト / リンク注釈）やキーワード（github, zenodo など）で絞り込めます
-- 「開く ↗」でURLを新しいタブで開けます
-- 「CSVをダウンロード」でコマンドライン版と同じ形式のCSVを保存できます（絞り込みに関係なく全件）
-
-終了するときは、ターミナルで `Ctrl + C` を押します。
-
-## 実行方法（コマンドライン）
+### コマンドラインでURL抽出だけ使う
 
 ```bash
 python extract_urls.py paper.pdf
 ```
 
-CSVの保存先を変える場合は `-o` を指定します。
+画面に一覧を表示し、PDFと同じフォルダに `<PDF名>_urls.csv` を保存します（`-o result.csv` で保存先を変更できます）。
 
-```bash
-python extract_urls.py paper.pdf -o result.csv
-```
+## 公開する（Streamlit Community Cloud）
 
-ファイルが存在しない・PDFでない・パスワード付き などの場合は、エラーメッセージを表示して終了コード 1 で終了します。
+1. このリポジトリをGitHubに push します
+2. https://share.streamlit.io を開き、GitHubアカウントでログインします
+3. 「Create app」→「Deploy a public app from GitHub」を選び、次のように入力します
+   - Repository: このリポジトリ
+   - Branch: `main`
+   - Main file path: `app.py`
+   - App URL: 好きな名前（例: `paper-data-finder`）
+4. 「Advanced settings」で Python のバージョン（3.11 など）を選び、Secrets 欄に次の1行を入れます
+   ```toml
+   APP_PASSWORD = "研究室で決めた合言葉"
+   ```
+5. 「Deploy」を押すと、数分で `https://〇〇.streamlit.app` が使えるようになります
 
-```
-エラー: ファイルが見つかりません: paper.pdf
-```
-
-## 出力例
-
-画面表示:
-
-```
-page  source           url
---------------------------------------------------------------------------------
-   1  text             https://analyse.kmi.open.ac.uk/open_dataset
-   1  text             https://github.com/edm-lab/dropout-prediction
-   1  text             osf.io/x7k2m
-   1  text+annotation  https://huggingface.co/edm-lab/dropout-bert
-   1  annotation       https://github.com/edm-lab/dropout-prediction/tree/main/scripts
-   2  text             https://doi.org/10.1038/sdata.2017.171
---------------------------------------------------------------------------------
-合計 6 件
-CSVを保存しました: paper_urls.csv
-```
-
-CSV（入力PDFと同じフォルダに `<PDF名>_urls.csv` として保存。Excelで開けるよう BOM 付き UTF-8）:
-
-```csv
-page,url,source
-1,https://analyse.kmi.open.ac.uk/open_dataset,text
-1,https://github.com/edm-lab/dropout-prediction,text
-1,https://huggingface.co/edm-lab/dropout-bert,text+annotation
-```
-
-`source` 列の意味:
-
-| 値 | 意味 |
-|---|---|
-| `text` | 本文テキストから抽出 |
-| `annotation` | リンク注釈（ハイパーリンク）から取得 |
-| `text+annotation` | 両方から見つかった |
+一度公開すれば、GitHubの `main` ブランチに push するたびに、公開中のアプリも自動で更新されます。
+合言葉を変えるときは、Streamlit Community Cloud のアプリの Settings → Secrets で書き換えます（コードの変更は不要です）。
 
 ## テスト
 
@@ -109,16 +93,13 @@ python -m pytest
 
 ## 既知の制限
 
-- ドメイン名の途中で改行されたスキームなしURL（`pslcdatashop.` ／ `web.cmu.edu/...`）は後半しか取れません
-- PDF上でURLの途中に空白が入っている場合（`https://github. com/...`）は取れません
-- スキームなしURLはパス付き（`kaggle.com/...`）のみ対象で、`kaggle.com` 単体は拾いません
-- 2段組の段をまたいだURLや、ページをまたいだURLは結合しません
+- LAKのPDFはACMが自動取得を禁止しているため、手動で保存する必要があります
+- EDM 2022年以前は、論文がZenodoで公開されていないため一覧に出ません
+- Crossref は会議名で検索しているため、まれに取りこぼしや関係ない論文が混ざる可能性があります
+- URL抽出: ドメイン名の途中で改行されたスキームなしURLや、URLの途中に空白が入ったものは取れません
 
 ## 今後の拡張予定
 
-以下は未実装で、コード内に差し込み位置のコメントを入れてあります。
-
-- 参考文献セクションの除外（`extract_page_texts()`）
-- URLの種類分け（GitHub / Zenodo / OSF / Kaggle など）（`merge_url_records()`）
+- URLの種類分け（GitHub / Zenodo / OSF / Kaggle など）
 - データ言及文の抽出、公開状況（公開 / 要依頼 / 非公開）の判定
-- 複数PDFの一括処理（`main()`）
+- 研究室の人手調査の結果と比べた精度評価
