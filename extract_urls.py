@@ -192,7 +192,10 @@ def _should_join(line: str, next_line: str) -> bool:
     # 行末が区切り文字 → 続きがあるのはほぼ確実（LaTeXの \url はここで改行することが多い）
     if url[-1] in _CONTINUE_CHARS:
         # ただし「…/」の次行が「Dataset」のような大文字始まりの英単語なら、新しい文の始まりとみなす
-        if url[-1] == "/" and re.fullmatch(r"[A-Z][a-z]+", token):
+        if url[-1] == "/" and re.fullmatch(r"[A-Z][a-z]+", token.rstrip(_TRAILING_PUNCT)):
+            return False
+        # 次行が「2 https://…」のような脚注番号で始まる場合も結合しない
+        if re.match(r"\d{1,2}\s", next_stripped):
             return False
         return True
     # 行末が「.」→ 文末のピリオドの可能性もあるので、次行がURLの続きらしい場合だけ結合

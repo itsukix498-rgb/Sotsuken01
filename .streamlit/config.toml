@@ -1,0 +1,14 @@
+[client]
+# 右上メニューを最小限にし、閲覧者に「Deploy」などの開発者向けボタンを出さない
+toolbarMode = "minimal"
+
+[browser]
+# 利用状況の送信をしない
+gatherUsageStats = false
+
+[server]
+# アップロードできるPDFの最大サイズ（MB）
+maxUploadSize = 50
+
+[theme]
+primaryColor = "#2563eb"

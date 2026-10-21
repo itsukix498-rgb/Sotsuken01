@@ -130,6 +130,11 @@ def test_broken_urls_are_joined(text, expected):
         ("(https://osf.io/abcde)\nsee/also", ["https://osf.io/abcde"]),
         # 「/」で終わった行の次が大文字始まりの文
         ("page: https://www.cs.example.edu/~yamada/\nDataset on Kaggle", ["https://www.cs.example.edu/~yamada/"]),
+        # 所属の下のURLの次行が「Abstract.」（実際のAIED論文で起きたケース）
+        ("University, USA\nhttps://www.cmu.edu/\nAbstract. An advantage", ["https://www.cmu.edu/"]),
+        # 脚注が続けて並ぶ（実際のAIED論文で起きたケース）
+        ("1 https://kubernetes.io/\n2 https://jupyterlab.readthedocs.io/en/stable/",
+         ["https://kubernetes.io/", "https://jupyterlab.readthedocs.io/en/stable/"]),
         # 「.」の次行が節番号
         ("at https://osf.io/abcde.\n2.1 Data", ["https://osf.io/abcde"]),
     ],
