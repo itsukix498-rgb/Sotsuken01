@@ -32,14 +32,14 @@ CONFERENCES = {
     "AIED": "Artificial Intelligence in Education（Springer）",
 }
 
-# J-STAGE で公開されている国内の学会誌・大会論文集（キー: 画面での短い名前）
+# J-STAGE で公開されている国内の学会誌・大会論文集
+#   キー: 画面に出す短い名前（スマホでもボタンが画面に収まるように、学会の略称を使う）
 #   material: J-STAGE の資料名（検索に使う） / cdjournal: J-STAGE の資料コード（結果の確認に使う）
-#   short: 選択ボタンに出す短い名前（スマホでもボタンが画面に収まるように）
 JSTAGE_JOURNALS = {
-    "教育工学会論文誌": {"material": "日本教育工学会論文誌", "cdjournal": "jjet", "short": "JSET論文誌"},
-    "教育システム情報学会誌": {"material": "教育システム情報学会誌", "cdjournal": "jsise", "short": "JSiSE学会誌"},
-    "教育工学会研究報告集": {"material": "日本教育工学会研究報告集", "cdjournal": "jsetstudy", "short": "JSET研究報告"},
-    "人工知能学会全国大会": {"material": "人工知能学会全国大会論文集", "cdjournal": "pjsai", "short": "JSAI全国大会"},
+    "JSET論文誌": {"material": "日本教育工学会論文誌", "cdjournal": "jjet"},
+    "JSiSE学会誌": {"material": "教育システム情報学会誌", "cdjournal": "jsise"},
+    "JSET研究報告": {"material": "日本教育工学会研究報告集", "cdjournal": "jsetstudy"},
+    "JSAI全国大会": {"material": "人工知能学会全国大会論文集", "cdjournal": "pjsai"},
 }
 
 # 会議・学会誌ごとに一覧を取得できる年の範囲

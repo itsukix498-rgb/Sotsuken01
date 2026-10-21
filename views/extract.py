@@ -1,4 +1,4 @@
-"""② URLを抽出するページ：手元のPDF（複数可）をアップロードしてURLを一覧にする。"""
+"""手元のPDFからURL抽出するページ：手元のPDF（複数可）をアップロードしてURLを一覧にする。"""
 
 from pathlib import Path
 
@@ -18,9 +18,9 @@ def run_extraction(data: bytes, name: str):
         return extract_urls_from_pdf(doc), doc.page_count
 
 
-st.title("🔗 URLを抽出する")
+st.title("🔗 手元のPDFからURL抽出")
 st.write("手元の論文PDFをアップロードすると、本文とハイパーリンクに含まれるURLを一覧にします。"
-         "「① 論文を集める」で自動取得できなかった論文（LAKなど）もここで処理できます。")
+         "「論文を集める」で自動取得できなかった論文（LAKなど）も、PDFを保存してここで処理できます。")
 
 with st.container(border=True):
     uploaded = st.file_uploader("論文PDFを選択（複数可・ドラッグ＆ドロップも可）", type=["pdf"], accept_multiple_files=True)
