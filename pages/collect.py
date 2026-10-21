@@ -5,6 +5,9 @@ import streamlit as st
 
 from collect_papers import (
     CONFERENCES,
+    JSTAGE_INTERVAL,
+    JSTAGE_JOURNALS,
+    JSTAGE_MAX_BATCH,
     PDF_AUTO,
     YEAR_RANGES,
     PdfDownloadError,
@@ -27,36 +30,52 @@ def search(conferences: tuple, years: tuple, keyword: str):
 
 
 st.title("📚 論文を集める")
-st.write("国際会議の論文を検索し、無料で読めるPDFを取得して、本文中のURLを一覧にします。")
+st.write("国際会議や国内の学会誌の論文を検索し、無料で読めるPDFを取得して、本文中のURLを一覧にします。")
 
 # --- STEP 1 検索条件 -------------------------------------------------------------
 with st.container(border=True):
     st.subheader("STEP 1　検索条件")
     c1, c2 = st.columns([3, 2])
     with c1:
-        conferences = st.pills(
-            "会議（複数選べます）", list(CONFERENCES), selection_mode="multi", default=["EDM"],
-            format_func=lambda c: c, help="\n".join(f"- **{k}**: {v}" for k, v in CONFERENCES.items()),
+        intl = st.pills(
+            "🌏 国際会議（英語）", list(CONFERENCES), selection_mode="multi", default=["EDM"],
+            help="\n".join(f"- **{k}**: {v}" for k, v in CONFERENCES.items()),
         )
-        keyword = st.text_input("タイトルのキーワード（任意）", placeholder="例: dropout, knowledge tracing, LLM")
+        # 国内は名前が長く、ボタンだとスマホで画面からはみ出すため、選択式のリストにする
+        domestic = st.multiselect(
+            "🗾 国内の学会誌・大会（日本語・J-STAGE）", list(JSTAGE_JOURNALS),
+            format_func=lambda k: f"{JSTAGE_JOURNALS[k]['short']}（{JSTAGE_JOURNALS[k]['material']}）",
+            placeholder="選んでください（複数可）",
+        )
+        keyword = st.text_input("タイトルのキーワード（任意）",
+                                placeholder="例: dropout, knowledge tracing, 学習分析, 生成AI")
     with c2:
         year_from, year_to = st.select_slider("年", options=list(range(2020, 2027)), value=(2024, 2024))
-        st.caption("1回の検索は、会議×年の組み合わせ6つまでにしてください。")
+        st.caption("1回の検索は、会議・学会誌×年の組み合わせ6つまでにしてください。")
 
-    with st.expander("会議ごとの対応状況"):
+    conferences = intl + domestic
+    with st.expander("会議・学会誌ごとの対応状況"):
         st.markdown(
-            "| 会議 | 論文一覧 | PDFの自動取得 |\n|---|---|---|\n"
+            "| 会議・学会誌 | 論文一覧 | PDFの自動取得 |\n|---|---|---|\n"
             f"| LAK | {YEAR_RANGES['LAK'][0]}年〜（Crossref） | ほぼ不可：ACMが自動取得を禁止しています。論文ページから手動で保存してください |\n"
             f"| EDM | {YEAR_RANGES['EDM'][0]}年〜（Zenodo） | ほぼすべて可能（オープンアクセス） |\n"
-            f"| AIED | {YEAR_RANGES['AIED'][0]}年〜（Crossref） | 一部のみ：オープンアクセスの論文だけ取得できます |\n\n"
+            f"| AIED | {YEAR_RANGES['AIED'][0]}年〜（Crossref） | 一部のみ：オープンアクセスの論文だけ取得できます |\n"
+            f"| 国内の学会誌・大会 | {YEAR_RANGES['教育工学会論文誌'][0]}年〜（J-STAGE） | "
+            f"多くが可能。J-STAGEの利用規約（大量ダウンロードの禁止）に配慮し、1回{JSTAGE_MAX_BATCH}本まで・"
+            f"{JSTAGE_INTERVAL:.0f}秒おきに取得します |\n\n"
             "EDM 2022年以前は、論文がZenodoで公開されていないため一覧に出ません。"
+            "人工知能学会全国大会は1年で約1,000件あるので、キーワードで絞るのがおすすめです。"
         )
 
     years = list(range(year_from, year_to + 1))
     too_many = len(conferences) * len(years) > 6
     if too_many:
-        st.warning("組み合わせが多すぎます。会議か年の範囲を減らしてください。")
+        st.warning("組み合わせが多すぎます。会議・学会誌か年の範囲を減らしてください。")
     clicked = st.button("🔍 論文を検索", type="primary", disabled=not conferences or too_many)
+    if domestic:
+        # J-STAGE WebAPI の利用条件として、提供元の表示とJ-STAGEへのリンクが必要
+        st.caption("国内の学会誌・大会の論文情報は [J-STAGE](https://www.jstage.jst.go.jp/) から取得しています。"
+                   "Powered by J-STAGE")
 
 if clicked:
     with st.spinner("論文データベースを検索しています…（数秒〜30秒ほど）"):
@@ -101,7 +120,7 @@ with st.container(border=True):
         disabled=["conference", "year", "title", "authors", "pdf_status", "landing_url"],
         column_config={
             "selected": st.column_config.CheckboxColumn("選択", help="URL抽出する論文にチェック", width="small"),
-            "conference": st.column_config.TextColumn("会議", width="small"),
+            "conference": st.column_config.TextColumn("会議・学会誌", width="small"),
             "year": st.column_config.NumberColumn("年", format="%d", width="small"),
             "title": st.column_config.TextColumn("タイトル", width="large"),
             "authors": st.column_config.TextColumn("著者", width="medium"),
@@ -126,13 +145,20 @@ with st.container(border=True):
 # --- STEP 3 PDFを取得してURL抽出 ----------------------------------------------------
 with st.container(border=True):
     st.subheader("STEP 3　PDFを取得してURLを抽出")
-    count = len(chosen_auto)
-    if count > MAX_BATCH:
-        st.warning(f"一度に処理できるのは {MAX_BATCH} 本までです（今 {count} 本選択中）。先頭の {MAX_BATCH} 本だけ処理します。")
-    target = chosen_auto.head(MAX_BATCH)
-    # 1本あたり3〜6秒（ダウンロード＋待ち時間）として目安を出す
-    minutes = len(target) * 6 / 60
-    estimate = "1分以内" if minutes <= 1 else f"{len(target) * 3 // 60 or 1}〜{round(minutes)}分"
+    # J-STAGEは利用規約（機械的な大量ダウンロードの禁止）に配慮して、ほかより少ない本数に抑える
+    is_jstage = chosen_auto["conference"].isin(list(JSTAGE_JOURNALS))
+    jstage_part = chosen_auto[is_jstage].head(JSTAGE_MAX_BATCH)
+    other_part = chosen_auto[~is_jstage].head(MAX_BATCH - len(jstage_part))
+    target = pd.concat([other_part, jstage_part])
+    if is_jstage.sum() > JSTAGE_MAX_BATCH:
+        st.warning(f"J-STAGEの論文は、利用規約に配慮して1回 {JSTAGE_MAX_BATCH} 本までにしています"
+                   f"（今 {int(is_jstage.sum())} 本選択中）。先頭の {JSTAGE_MAX_BATCH} 本だけ処理します。"
+                   "STEP 2 のチェックで、調べたい論文を選んでください。")
+    if len(chosen_auto) > len(target) and (~is_jstage).sum() > len(other_part):
+        st.warning(f"一度に処理できるのは {MAX_BATCH} 本までです（今 {len(chosen_auto)} 本選択中）。先頭から {MAX_BATCH} 本だけ処理します。")
+    # 1本あたり：ダウンロード数秒＋待ち時間（J-STAGEは3秒、ほかは1秒）として目安を出す
+    seconds = len(other_part) * 4 + len(jstage_part) * (3 + JSTAGE_INTERVAL)
+    estimate = "1分以内" if seconds <= 60 else f"約{round(seconds / 60)}分"
     st.caption(f"{len(target)} 本のPDFを取得します。相手のサーバーに負担をかけないよう1本ずつ取得するため、"
                f"目安で{estimate}かかります。PDFは保存されません。")
     run = st.button("⬇️ PDFを取得してURLを抽出", type="primary", disabled=len(target) == 0)
@@ -154,7 +180,7 @@ if run:
         results.append({"conference": paper["conference"], "year": paper["year"], "title": paper["title"],
                         "status": status, "urls": n_urls, "error": error, "landing_url": paper["landing_url"]})
         if i < len(target):
-            polite_sleep(1.0)
+            polite_sleep(JSTAGE_INTERVAL if paper["conference"] in JSTAGE_JOURNALS else 1.0)
     progress.progress(1.0, text="完了しました")
     st.session_state["batch"] = {"results": results, "urls": url_list}
 
@@ -171,7 +197,7 @@ if batch:
         st.dataframe(
             res, hide_index=True, width="stretch",
             column_config={
-                "conference": st.column_config.TextColumn("会議", width="small"),
+                "conference": st.column_config.TextColumn("会議・学会誌", width="small"),
                 "year": st.column_config.NumberColumn("年", format="%d", width="small"),
                 "title": st.column_config.TextColumn("タイトル", width="large"),
                 "status": st.column_config.TextColumn("結果", width="small"),

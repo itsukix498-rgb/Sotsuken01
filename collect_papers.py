@@ -1,9 +1,12 @@
-"""国際会議（LAK・EDM・AIED）の論文一覧を公開APIから集め、PDFを取得するモジュール。
+"""国際会議（LAK・EDM・AIED）と国内の学会誌（J-STAGE）の論文一覧を公開APIから集め、PDFを取得するモジュール。
 
 使うAPI（いずれも無料・APIキー不要で、プログラムからの利用が認められているもの）:
     - Crossref  … LAK（ACM）と AIED（Springer）の論文一覧
     - Zenodo    … EDM（2023年以降。論文がZenodoのコミュニティで公開されている）
     - OpenAlex  … 無料で読めるPDFの場所（オープンアクセス情報）の補完
+    - J-STAGE WebAPI … 日本語の学会誌・大会論文集の論文一覧（非商用利用は申請不要。
+      画面に「Powered by J-STAGE」の表示が必要。PDFの機械的な大量ダウンロードは
+      利用規約で禁止されているため、1回の取得本数を少なくし、間隔も長めにとる）
 
 Google Scholar や DBLP はボット対策があり自動収集が認められていないため使わない。
 PDFの取得も、出版社がボット対策をしている場合（ACMなど）は無理に取らず「手動」とする。
@@ -14,6 +17,7 @@ from __future__ import annotations
 import html
 import re
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 
 import requests
@@ -27,12 +31,28 @@ CONFERENCES = {
     "EDM": "Educational Data Mining",
     "AIED": "Artificial Intelligence in Education（Springer）",
 }
-# 会議ごとに一覧を取得できる年の範囲
+
+# J-STAGE で公開されている国内の学会誌・大会論文集（キー: 画面での短い名前）
+#   material: J-STAGE の資料名（検索に使う） / cdjournal: J-STAGE の資料コード（結果の確認に使う）
+#   short: 選択ボタンに出す短い名前（スマホでもボタンが画面に収まるように）
+JSTAGE_JOURNALS = {
+    "教育工学会論文誌": {"material": "日本教育工学会論文誌", "cdjournal": "jjet", "short": "JSET論文誌"},
+    "教育システム情報学会誌": {"material": "教育システム情報学会誌", "cdjournal": "jsise", "short": "JSiSE学会誌"},
+    "教育工学会研究報告集": {"material": "日本教育工学会研究報告集", "cdjournal": "jsetstudy", "short": "JSET研究報告"},
+    "人工知能学会全国大会": {"material": "人工知能学会全国大会論文集", "cdjournal": "pjsai", "short": "JSAI全国大会"},
+}
+
+# 会議・学会誌ごとに一覧を取得できる年の範囲
 YEAR_RANGES = {
     "LAK": (2011, 2026),
     "EDM": (2023, 2026),  # Zenodoのコミュニティ（edm2023〜）がある年のみ
     "AIED": (2015, 2026),
+    **{name: (2000, 2026) for name in JSTAGE_JOURNALS},
 }
+
+# J-STAGEのPDF取得は利用規約（大量ダウンロードの禁止）に配慮して、少なめ・ゆっくりにする
+JSTAGE_MAX_BATCH = 10
+JSTAGE_INTERVAL = 3.0  # 秒
 
 # PDFの取得可否
 PDF_AUTO = "自動取得できる"
@@ -50,6 +70,7 @@ class Paper:
     doi: str = ""
     landing_url: str = ""  # 論文のページ（人がブラウザで開く用）
     pdf_url: str = ""  # 自動で取得できるPDFのURL（なければ空）
+    title_en: str = ""  # 日本語論文の英語タイトル（キーワード検索に使う）
 
     @property
     def pdf_status(self) -> str:
@@ -182,6 +203,94 @@ def fetch_edm(session, year: int) -> list[Paper]:
     return [p for p in papers if p.title and not re.match(r"(?i)proceedings of|front matter", p.title)]
 
 
+_JSTAGE_API = "https://api.jstage.jst.go.jp/searchapi/do"
+_ATOM = "{http://www.w3.org/2005/Atom}"
+_PRISM = "{http://prismstandard.org/namespaces/basic/2.0/}"
+_OPENSEARCH = "{http://a9.com/-/spec/opensearch/1.1/}"
+
+
+def _jstage_text(entry: ET.Element, path: str) -> str:
+    """J-STAGEの応答から、日本語（なければ英語）の値を取り出す。"""
+    for lang in ("ja", "en"):
+        el = entry.find(f"{_ATOM}{path}/{_ATOM}{lang}")
+        if el is not None and (el.text or "").strip():
+            return el.text.strip()
+    return ""
+
+
+def jstage_pdf_url(article_url: str) -> str:
+    """論文ページのURL（…/_article/-char/ja/）から、PDFのURL（…/_pdf/-char/ja）を作る。"""
+    if "/_article" not in article_url:
+        return ""
+    return re.sub(r"/_article.*$", "/_pdf/-char/ja", article_url)
+
+
+def parse_jstage(xml_text: str, journal: str, cdjournal: str) -> tuple[list[Paper], int]:
+    """J-STAGE WebAPI（Atom形式のXML）の応答を論文のリストにする。戻り値: (論文, 総件数)"""
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        raise CollectError("J-STAGEから想定外の応答が返りました") from e
+    status = root.find(f"{_ATOM}result/{_ATOM}status")
+    if status is not None and status.text not in (None, "0"):
+        message = root.findtext(f"{_ATOM}result/{_ATOM}message") or ""
+        raise CollectError(f"J-STAGEの検索でエラーが返りました（{status.text}: {message}）")
+    total = int(root.findtext(f"{_OPENSEARCH}totalResults") or 0)
+
+    papers = []
+    for entry in root.findall(f"{_ATOM}entry"):
+        # 資料名の検索はあいまい一致なので、資料コードで目的の学会誌か確認する
+        if (entry.findtext(f"{_ATOM}cdjournal") or "") != cdjournal:
+            continue
+        title = clean_title(_jstage_text(entry, "article_title"))
+        if not title:
+            continue
+        lang = "ja" if entry.find(f"{_ATOM}author/{_ATOM}ja/{_ATOM}name") is not None else "en"
+        authors = [re.sub(r"\s+", " ", n.text or "").strip()
+                   for n in entry.findall(f"{_ATOM}author/{_ATOM}{lang}/{_ATOM}name") if (n.text or "").strip()]
+        # 著者のない記事（「研究会優秀賞論文」の発表や目次など）は論文ではないので除く
+        if not authors:
+            continue
+        doi = (entry.findtext(f"{_PRISM}doi") or "").strip().lower()
+        article = (entry.findtext(f"{_ATOM}article_link/{_ATOM}ja") or entry.findtext(f"{_ATOM}article_link/{_ATOM}en") or "").strip()
+        year = entry.findtext(f"{_ATOM}pubyear") or "0"
+        papers.append(Paper(
+            conference=journal, year=int(year) if year.isdigit() else 0, title=title, authors=authors,
+            doi=doi, landing_url=article or (f"https://doi.org/{doi}" if doi else ""),
+            pdf_url=jstage_pdf_url(article),
+            title_en=clean_title(entry.findtext(f"{_ATOM}article_title/{_ATOM}en") or ""),
+        ))
+    return papers, total
+
+
+def fetch_jstage(session, journal: str, year: int) -> list[Paper]:
+    """J-STAGE WebAPI で、国内の学会誌・大会論文集の論文を集める。"""
+    info = JSTAGE_JOURNALS[journal]
+    papers: list[Paper] = []
+    start, count = 1, 1000  # J-STAGE は1回最大1000件
+    while True:
+        try:
+            r = session.get(_JSTAGE_API, timeout=TIMEOUT, params={
+                "service": 3, "material": info["material"], "pubyearfrom": year, "pubyearto": year,
+                "count": count, "start": start,
+            })
+            r.raise_for_status()
+        except requests.RequestException as e:
+            raise CollectError(f"J-STAGEへの接続に失敗しました: {e}") from e
+        found, total = parse_jstage(r.text, journal, info["cdjournal"])
+        papers.extend(found)
+        start += count
+        if start > total or start > 5000:
+            break
+    return papers
+
+
+def _fetcher(name: str):
+    if name in JSTAGE_JOURNALS:
+        return lambda session, year: fetch_jstage(session, name, year)
+    return _FETCHERS[name]
+
+
 _FETCHERS = {"LAK": fetch_lak, "EDM": fetch_edm, "AIED": fetch_aied}
 
 
@@ -223,7 +332,7 @@ def collect_papers(conferences: list[str], years: list[int], keyword: str = "", 
         if progress:
             progress(n / max(len(jobs), 1), f"{conf} {year} の論文を検索中…")
         try:
-            found = _FETCHERS[conf](session, year)
+            found = _fetcher(conf)(session, year)
         except CollectError as e:
             notes.append(f"{conf} {year}: {e}")
             continue
@@ -244,7 +353,8 @@ def collect_papers(conferences: list[str], years: list[int], keyword: str = "", 
 
     if keyword:
         words = keyword.lower().split()
-        unique = [p for p in unique if all(w in p.title.lower() for w in words)]
+        # 日本語論文は英語タイトルでも探せるようにする（「learning analytics」で日本語論文も見つかる）
+        unique = [p for p in unique if all(w in f"{p.title} {p.title_en}".lower() for w in words)]
 
     if progress:
         progress(0.95, "無料で読めるPDFを探しています…")

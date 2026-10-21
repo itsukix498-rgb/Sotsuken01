@@ -57,6 +57,6 @@ nav = st.navigation(pages)
 
 with st.sidebar:
     st.caption("論文を集め、本文から公開データの手がかり（URL）を見つけます。")
-    st.caption("データ: Crossref / Zenodo / OpenAlex")
+    st.caption("データ: Crossref / Zenodo / OpenAlex / [J-STAGE](https://www.jstage.jst.go.jp/)（Powered by J-STAGE）")
 
 nav.run()

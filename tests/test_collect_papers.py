@@ -90,6 +90,65 @@ def test_edm_reads_zenodo_and_skips_proceedings_book():
     ]
 
 
+JSTAGE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <result><status>0</status><message/></result>
+  <opensearch:totalResults>3</opensearch:totalResults>
+  <entry>
+    <article_title><en><![CDATA[Development of a Worksheet for Flipped Classroom]]></en>
+      <ja><![CDATA[大学教員への反転授業設計を支援するワークシートの開発と評価]]></ja></article_title>
+    <article_link><en>https://www.jstage.jst.go.jp/article/jjet/48/1/48_46129/_article</en>
+      <ja>https://www.jstage.jst.go.jp/article/jjet/48/1/48_46129/_article/-char/ja/</ja></article_link>
+    <author><en><name><![CDATA[Sachika SHIBUKAWA]]></name></en>
+      <ja><name><![CDATA[澁川 幸加]]></name><name><![CDATA[田口  真奈]]></name></ja></author>
+    <cdjournal>jjet</cdjournal>
+    <pubyear>2024</pubyear>
+    <prism:doi>10.15077/jjet.46129</prism:doi>
+  </entry>
+  <entry>
+    <article_title><en><![CDATA[]]></en><ja><![CDATA[研究会優秀賞論文]]></ja></article_title>
+    <article_link><ja>https://www.jstage.jst.go.jp/article/jjet/48/1/48_x/_article/-char/ja/</ja></article_link>
+    <cdjournal>jjet</cdjournal><pubyear>2024</pubyear>
+  </entry>
+  <entry>
+    <article_title><ja><![CDATA[別の学会誌の論文]]></ja></article_title>
+    <author><ja><name>山田 太郎</name></ja></author>
+    <cdjournal>other</cdjournal><pubyear>2024</pubyear>
+  </entry>
+</feed>"""
+
+
+def test_parse_jstage():
+    papers, total = cp.parse_jstage(JSTAGE_XML, "教育工学会論文誌", "jjet")
+    assert total == 3
+    # 著者のない記事と、別の学会誌の論文は除く
+    assert len(papers) == 1
+    p = papers[0]
+    assert p.title == "大学教員への反転授業設計を支援するワークシートの開発と評価"
+    assert p.title_en == "Development of a Worksheet for Flipped Classroom"
+    assert p.authors == ["澁川 幸加", "田口 真奈"]
+    assert (p.year, p.doi) == (2024, "10.15077/jjet.46129")
+    assert p.landing_url == "https://www.jstage.jst.go.jp/article/jjet/48/1/48_46129/_article/-char/ja/"
+    assert p.pdf_url == "https://www.jstage.jst.go.jp/article/jjet/48/1/48_46129/_pdf/-char/ja"
+    assert p.pdf_status == cp.PDF_AUTO
+
+
+def test_parse_jstage_error_status():
+    xml = '<feed xmlns="http://www.w3.org/2005/Atom"><result><status>ERR_001</status><message>bad</message></result></feed>'
+    with pytest.raises(cp.CollectError, match="ERR_001"):
+        cp.parse_jstage(xml, "教育工学会論文誌", "jjet")
+
+
+def test_keyword_matches_english_title_of_japanese_paper(monkeypatch):
+    fake = [cp.Paper("教育工学会論文誌", 2024, "学習分析の研究", doi="10.1/a", title_en="A Study of Learning Analytics"),
+            cp.Paper("教育工学会論文誌", 2024, "授業設計の研究", doi="10.1/b", title_en="Lesson Design")]
+    monkeypatch.setattr(cp, "fetch_jstage", lambda s, j, y: list(fake))
+    monkeypatch.setattr(cp, "add_open_access_pdfs", lambda s, p: None)
+    assert [p.doi for p in cp.collect_papers(["教育工学会論文誌"], [2024], "learning analytics")[0]] == ["10.1/a"]
+    assert [p.doi for p in cp.collect_papers(["教育工学会論文誌"], [2024], "学習分析")[0]] == ["10.1/a"]
+
+
 def test_collect_dedup_keyword_and_out_of_range(monkeypatch):
     fake = [cp.Paper("EDM", 2024, "Dropout prediction", doi="10.1/x"),
             cp.Paper("EDM", 2024, "Dropout prediction", doi="10.1/y"),  # 同じタイトルの別バージョン
