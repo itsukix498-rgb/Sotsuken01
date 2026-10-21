@@ -113,8 +113,11 @@ def extract_page_texts(doc: fitz.Document) -> list[str]:
 # 3. URL抽出
 # ---------------------------------------------------------------------------
 
-# URLに使える文字（空白・引用符・山括弧などは含めない）
-_URL_CHARS = r"[^\s<>\"'{}|\\^`“”‘’]"
+# URLに使える文字（空白・引用符・山括弧などは含めない）。
+# 日本語の論文では「https://…を参照」「（https://…）」のようにURLの直後に空白なしで
+# 日本語や全角記号が続くため、次の文字もURLの区切りとして扱う:
+#   一般句読点（“” ‘’ … など）、全角空白・句読点・かな、漢字、全角英数・全角記号
+_URL_CHARS = r"[^\s<>\"'{}|\\^`\u2000-\u206f\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]"
 
 # スキームなしURLとして認めるトップレベルドメイン。
 # 「train.csv/test.csv」のような誤検出を避けるため、汎用的な [a-z]+ ではなく列挙する
@@ -189,6 +192,9 @@ def _should_join(line: str, next_line: str) -> bool:
     # 次行が「/」で始まる → パスの続き
     if token.startswith("/"):
         return True
+    # 次行が「(参照日 2023.07.10)」「[1]」のように括弧で始まる → URLはここで終わっている
+    if token[0] in "([{<":
+        return False
     # 行末が区切り文字 → 続きがあるのはほぼ確実（LaTeXの \url はここで改行することが多い）
     if url[-1] in _CONTINUE_CHARS:
         # ただし「…/」の次行が「Dataset」のような大文字始まりの英単語なら、新しい文の始まりとみなす
@@ -209,8 +215,16 @@ def _should_join(line: str, next_line: str) -> bool:
     # 行末が閉じ括弧やカンマなど → URLはそこで終わっているとみなす
     if not url[-1].isalnum():
         return False
-    # 行末が英数字（単語の途中で切れた可能性）→ 次行トークンにパスや拡張子があるときだけ結合
-    return "/" in token.rstrip("/.,;)") or bool(_FILE_EXT.match(token))
+    # 行末が英数字（単語の途中で切れた可能性）→ 次行トークンがURLの続きらしいときだけ結合
+    core = token.rstrip(_TRAILING_PUNCT + ")]")
+    return (
+        "/" in core
+        or bool(_FILE_EXT.match(token))
+        # 「…/watc」+「h?v=xxxx」のように、次行にクエリ文字列（? や =）がある
+        or "?" in core or "=" in core
+        # 「…?v=hmHIU」+「rocKHg」のようなIDの途中（英字の大小や数字が混ざる、普通の単語ではない並び）
+        or ("=" in url and bool(re.fullmatch(r"[\w\-]+", core)) and bool(re.search(r"[a-z][A-Z]|[A-Za-z]\d|\d[A-Za-z]", core)))
+    )
 
 
 def join_broken_lines(text: str) -> str:

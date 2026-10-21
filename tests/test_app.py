@@ -59,6 +59,24 @@ def test_extract_page_with_sample():
     assert metrics["URL件数"] == "11"
 
 
+def test_collect_page_limits_jstage_batch(monkeypatch):
+    import collect_papers
+
+    def fake(conferences, years, keyword="", progress=None):
+        return [collect_papers.Paper("教育工学会論文誌", 2024, f"論文{i}", ["著者"], f"10.1/{i}",
+                                     f"https://www.jstage.jst.go.jp/article/x/{i}/_article/-char/ja/",
+                                     f"https://www.jstage.jst.go.jp/article/x/{i}/_pdf/-char/ja") for i in range(12)], []
+
+    monkeypatch.setattr(collect_papers, "collect_papers", fake)
+    at = AppTest.from_file(str(ROOT / "pages" / "collect.py"), default_timeout=60).run()
+    at.multiselect[0].set_value(["教育工学会論文誌"]).run()
+    next(b for b in at.button if "論文を検索" in b.label).click().run()
+    assert not at.exception
+    assert any("1回 10 本まで" in w.value for w in at.warning)
+    assert any("10 本のPDFを取得します" in c.value for c in at.caption)
+    assert any("Powered by J-STAGE" in c.value for c in at.caption)
+
+
 def test_collect_page_search(fake_search):
     at = AppTest.from_file(str(ROOT / "pages" / "collect.py"), default_timeout=60).run()
     assert not at.exception

@@ -150,6 +150,44 @@ def test_dot_at_line_end_joined_only_when_next_looks_like_path():
     ]
 
 
+# --- 日本語の論文 ---------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # URLの直後に日本語が続く
+        ("データはhttps://github.com/lab/dataで公開した。", ["https://github.com/lab/data"]),
+        ("詳細はhttps://osf.io/abcde/を参照されたい", ["https://osf.io/abcde/"]),
+        # 全角の括弧・句読点で囲まれている
+        ("公開データ（https://zenodo.org/records/123）を用いた", ["https://zenodo.org/records/123"]),
+        ("https://www.mext.go.jp/content/1421692_6.pdf，（2025年11月20日閲覧）．",
+         ["https://www.mext.go.jp/content/1421692_6.pdf"]),
+        ("「https://example.jp/a」と「https://example.jp/b」", ["https://example.jp/a", "https://example.jp/b"]),
+        # スキームなしURLの後ろに日本語
+        ("github.com/lab/dataに置いた", ["github.com/lab/data"]),
+        # 改行の次の行が日本語で始まる場合はつなげない
+        ("https://www.mext.go.jp/a_menu/\n文部科学省", ["https://www.mext.go.jp/a_menu/"]),
+        # 参考文献の「(参照日 …)」が次の行に来る（実際の日本教育工学会論文誌で起きたケース）
+        ("革―. https://www.learning-innovation.go.jp/bpr/\n(参照日 2023.07.10)",
+         ["https://www.learning-innovation.go.jp/bpr/"]),
+        # 「watch」の途中で改行（実際の日本教育工学会論文誌で起きたケース）
+        ("事例―中学校編―. https://www.youtube.com/watc\nh?v=v1hLJP1FfSs (参照日 2023.07.10)",
+         ["https://www.youtube.com/watch?v=v1hLJP1FfSs"]),
+        # 動画IDの途中で改行
+        ("化！―. https://www.youtube.com/watch?v=hmHIU\nrocKHg (参照日 2023.07.10)",
+         ["https://www.youtube.com/watch?v=hmHIUrocKHg"]),
+        # ドメインの直後で改行し、次行が「/」で始まる
+        ("ール構想における実践. https://www.youtube.com\n/watch?v=vUWYzyFuTNg (参照日 2023.07.10)",
+         ["https://www.youtube.com/watch?v=vUWYzyFuTNg"]),
+        # 日本語の文中でも、改行で切れたURLはつなげる
+        ("協働的な学び”, https://www.mext.go.jp/a_menu/shotou/new-\ncs/senseiouen/mext_01488.html ,（2025 年11 月20 日閲覧）.",
+         ["https://www.mext.go.jp/a_menu/shotou/new-cs/senseiouen/mext_01488.html"]),
+    ],
+)
+def test_japanese_text(text, expected):
+    assert extract_urls_from_text(text) == expected
+
+
 # --- 本文とリンク注釈の統合 ------------------------------------------------------
 
 def test_merge_dedup_keeps_first_page_and_prefers_scheme():
