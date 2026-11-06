@@ -226,6 +226,33 @@ def test_fulltext_tries_extra_urls_even_if_s2_missing(tmp_path):
     assert (r.source, r.pdf_from) == ("PDF", "先生のシート")
 
 
+def test_fulltext_saves_links_and_load_cached(tmp_path):
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Our data: https://github.com/lab/da\nta\n" + "\n".join(["some body text " * 5] * 6))
+    page.insert_link({"kind": pymupdf.LINK_URI, "from": pymupdf.Rect(72, 60, 200, 80),
+                      "uri": "https://github.com/lab/data"})
+    data = doc.tobytes()
+    paper = {"paperId": "p", "openAccessPdf": {"url": "https://x.org/a.pdf"}}
+    r = fulltext.get_fulltext(paper, cache_dir=tmp_path, download=lambda u: data, wait=lambda s: None)
+    assert r.links == [["https://github.com/lab/data"]]
+    pages, links = fulltext.load_cached("https://x.org/a.pdf", tmp_path)
+    assert len(pages) == 1 and links == [["https://github.com/lab/data"]]
+    assert fulltext.load_cached("https://x.org/other.pdf", tmp_path) is None
+
+
+def test_extract_from_pages_merges_text_and_links():
+    from research.paper_urls import extract_from_pages
+    pages = ["Data are at https://osf.io/abcde.", "Code: github.com/lab/tool and https://osf.io/abcde"]
+    links = [["https://osf.io/abcde"], []]
+    records = extract_from_pages(pages, links)
+    assert [(r.page, r.url, r.source) for r in records] == [
+        (1, "https://osf.io/abcde", "text+annotation"),
+        (2, "github.com/lab/tool", "text"),
+    ]
+
+
 def test_candidate_order_and_arxiv():
     paper = {"openAccessPdf": {"url": "https://a.org/1.pdf"}, "externalIds": {"ArXiv": "2206.08288"}}
     cands = fulltext.candidate_pdf_urls(paper, [("OpenAlex", "https://a.org/1.pdf"), ("OpenAlex", "https://b.org/2.pdf")])

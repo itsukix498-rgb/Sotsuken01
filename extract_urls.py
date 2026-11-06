@@ -37,8 +37,9 @@ class UrlRecord:
 
     @property
     def source(self) -> str:
-        # 本文とリンク注釈の両方から見つかった場合は "text+annotation" になる
-        return "+".join(self.sources)
+        # 本文とリンク注釈の両方から見つかった場合は、見つかった順に関係なく "text+annotation" にする
+        order = {SOURCE_TEXT: 0, SOURCE_ANNOTATION: 1}
+        return "+".join(sorted(self.sources, key=lambda s: order.get(s, 2)))
 
 
 class PdfOpenError(Exception):

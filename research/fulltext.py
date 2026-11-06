@@ -15,11 +15,12 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from collect_papers import PdfDownloadError, download_pdf, polite_sleep
-from extract_urls import PdfOpenError, extract_page_texts, open_pdf_bytes
+from extract_urls import PdfOpenError, extract_link_annotations, extract_page_texts, open_pdf_bytes
 
 SOURCE_S2ORC = "S2ORC"
 SOURCE_PDF = "PDF"
@@ -38,6 +39,7 @@ class FulltextResult:
     pdf_from: str = ""  # PDFをどこで見つけたか（Semantic Scholar / arXiv / OpenAlex / 先生のシート）
     s2orc_available: bool = False  # Semantic Scholar が本文を持っているか（textAvailability が fulltext）
     pages: int = 0
+    links: list[list[str]] = field(default_factory=list)  # ページごとのハイパーリンク（リンク注釈）のURL
 
     @property
     def page_texts(self) -> list[str]:
@@ -46,6 +48,24 @@ class FulltextResult:
 
 def _cache_file(cache_dir: Path, key: str) -> Path:
     return cache_dir / f"{hashlib.sha256(key.encode('utf-8')).hexdigest()[:32]}.txt"
+
+
+def _links_file(cache_dir: Path, key: str) -> Path:
+    """本文と同じ名前で、ハイパーリンクを保存するファイル（.links.json）。"""
+    return _cache_file(cache_dir, key).with_suffix(".links.json")
+
+
+def load_cached(pdf_url: str, cache_dir: str | Path = "data/cache/text") -> tuple[list[str], list[list[str]]] | None:
+    """保存した本文とハイパーリンクを読み込む。どちらかがなければ None。
+
+    戻り値: (ページごとの本文, ページごとのリンクのURL)
+    """
+    cache_dir = Path(cache_dir)
+    text_file, links_file = _cache_file(cache_dir, pdf_url), _links_file(cache_dir, pdf_url)
+    if not (text_file.exists() and links_file.exists()):
+        return None
+    return (text_file.read_text(encoding="utf-8").split(PAGE_BREAK),
+            json.loads(links_file.read_text(encoding="utf-8")))
 
 
 # 自動取得が禁止されているサイト。問い合わせ自体を送らない（ACM はボット対策で 403 を返す）
@@ -100,11 +120,12 @@ def get_fulltext(paper: dict | None, extra_urls: list[tuple[str, str]] = (),
     cache_dir = Path(cache_dir)
     failures = []
     for label, url in candidates:
-        cached = _cache_file(cache_dir, url)
-        if cached.exists():
-            text = cached.read_text(encoding="utf-8")
-            return FulltextResult(SOURCE_PDF, text=text, pdf_url=url, pdf_from=label, s2orc_available=s2orc,
-                                  pages=text.count(PAGE_BREAK) + 1)
+        # 本文とハイパーリンクの両方が保存済みなら、ダウンロードしない
+        cached = load_cached(url, cache_dir)
+        if cached:
+            pages, links = cached
+            return FulltextResult(SOURCE_PDF, text=PAGE_BREAK.join(pages), pdf_url=url, pdf_from=label,
+                                  s2orc_available=s2orc, pages=len(pages), links=links)
         if _blocked(url):
             failures.append(f"{label}: 自動取得が禁止されているサイト（{url.split('/')[2]}）")
             continue
@@ -112,6 +133,7 @@ def get_fulltext(paper: dict | None, extra_urls: list[tuple[str, str]] = (),
             data = download(url)
             with open_pdf_bytes(data, url) as doc:
                 pages = extract_page_texts(doc)
+                links = [extract_link_annotations(page) for page in doc]
         except (PdfDownloadError, PdfOpenError) as e:
             failures.append(f"{label}: {e}")
             continue
@@ -122,10 +144,12 @@ def get_fulltext(paper: dict | None, extra_urls: list[tuple[str, str]] = (),
             # 画像だけのPDF（スキャン）などは文字が取れない
             failures.append(f"{label}: PDFから文字を取り出せない（画像のみの可能性）")
             continue
-        cached.parent.mkdir(parents=True, exist_ok=True)
-        cached.write_text(text, encoding="utf-8")
+        text_file = _cache_file(cache_dir, url)
+        text_file.parent.mkdir(parents=True, exist_ok=True)
+        text_file.write_text(text, encoding="utf-8")
+        _links_file(cache_dir, url).write_text(json.dumps(links, ensure_ascii=False), encoding="utf-8")
         return FulltextResult(SOURCE_PDF, text=text, pdf_url=url, pdf_from=label, s2orc_available=s2orc,
-                              pages=len(pages))
+                              pages=len(pages), links=links)
 
     return FulltextResult(SOURCE_NONE, reason="PDFを取得できない（" + " / ".join(failures) + "）",
                           pdf_url=candidates[0][1], s2orc_available=s2orc)
