@@ -103,6 +103,17 @@ python extract_urls.py paper.pdf
 一度公開すれば、GitHubの `main` ブランチに push するたびに、公開中のアプリも自動で更新されます。
 合言葉を変えるときは、Streamlit Community Cloud のアプリの Settings → Secrets で書き換えます（コードの変更は不要です）。
 
+### 休止を防ぐ見回り
+
+Streamlit Community Cloud は、12時間アクセスがないとアプリを休止し、「Yes, get this app back up!」ボタンを押すまで起動しません。
+そこで、GitHub Actions（`.github/workflows/keep-awake.yml`）が6時間ごとに GitHub のサーバー上のブラウザでアプリを開き、
+休止していればボタンを押して起こします（`scripts/keep_awake.py`）。手元のPCは使わず、Public リポジトリなので無料です。
+
+- 動いたかどうかは、GitHub のリポジトリの「Actions」タブで確認できます。失敗するとリポジトリの持ち主にメールが届きます
+- 「Actions」タブ →「Keep app awake」→「Run workflow」で、すぐに手動で動かすこともできます
+- GitHub は、リポジトリに60日間更新がないと定期実行を自動で止めます。止まったら「Actions」タブから有効に戻してください
+- 公開URLを変えたときは、`keep-awake.yml` の `APP_URL` も書き換えます
+
 ## テスト
 
 ```bash
