@@ -1,0 +1,33 @@
+# 公開アプリを休止させないため、6時間ごとに GitHub のサーバー上のブラウザでアプリを開く。
+# Streamlit Community Cloud は12時間アクセスがないとアプリを休止するので、その前に見回る。
+# 手元のPCは使わない。GitHub の「Actions」タブから手動で動かすこともできる（Run workflow）。
+name: Keep app awake
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"  # 6時間ごと（UTC。混雑しやすい毎時0分を避けて17分に）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install browser
+        run: |
+          pip install playwright==1.47.0
+          python -m playwright install --with-deps chromium
+
+      - name: Visit the app
+        env:
+          APP_URL: https://sotsuken01.streamlit.app/
+        run: python scripts/keep_awake.py
