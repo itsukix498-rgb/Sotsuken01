@@ -114,6 +114,46 @@ Streamlit Community Cloud は、12時間アクセスがないとアプリを休�
 - GitHub は、リポジトリに60日間更新がないと定期実行を自動で止めます。止まったら「Actions」タブから有効に戻してください
 - 公開URLを変えたときは、`keep-awake.yml` の `APP_URL` も書き換えます
 
+## 研究用：先生のデータセットの論文の本文を取得する
+
+研究室の人手調査の結果（先生のデータセット）に載っている論文を Semantic Scholar で特定し、本文を取得して状況をまとめます。
+先生のデータセットは研究室の未公開データなので `data/` に置き、GitHub には上げません（`.gitignore` で除外）。
+外部に送るのは DOI・タイトル（Semantic Scholar・OpenAlex）と、論文PDFのダウンロードだけです。
+
+準備
+
+1. `.env.example` をコピーして `.env` を作り、Semantic Scholar の APIキーを書く（キーなしでも動くが、混雑で失敗しやすい）
+2. 先生のデータセットを `data/teacher_dataset.xlsx` に置く
+3. 列の対応を `data/column_map.json` に書く（書き方は `research/column_map.example.json`）
+
+実行
+
+```bash
+# 列の構成を確認する（先頭の数行を表示するだけ）
+python scripts/build_papers_status.py data/teacher_dataset.xlsx --describe
+
+# 会議ごとに3本ずつ試す
+python scripts/build_papers_status.py data/teacher_dataset.xlsx --per-venue 3
+
+# 全件
+python scripts/build_papers_status.py data/teacher_dataset.xlsx
+```
+
+結果は `data/papers_status.csv` に保存され、本文を取得できた割合が会議別・年別に表示されます。
+
+本文の取り方（`research/fulltext.py`）
+
+- S2ORC（Semantic Scholar の本文データ）は1本ずつ取るAPIがなく、一括ダウンロード（約120〜180GB）しかないため、本文があるかどうかを記録するだけにしています
+- PDFは次の順に試します：Semantic Scholar のオープンアクセスPDF → arXiv 版 → OpenAlex のPDF → 先生のシートのURL（EDM公式サイトのPDFなど）
+- ACM（dl.acm.org）は自動取得が禁止されているので、問い合わせません
+- Semantic Scholar・OpenAlex の結果と取得した本文は `data/cache/` に保存し、再実行のときは同じリクエストを送りません
+
+出典の表示（Semantic Scholar API の利用条件）
+
+- 論文情報の一部は [Semantic Scholar](https://www.semanticscholar.org/) から取得しています
+- 卒論・発表などで結果を使うときは、次の論文を引用します：
+  Kinney, R. et al. "The Semantic Scholar Open Data Platform." arXiv:2301.10140 (2023).
+
 ## テスト
 
 ```bash
