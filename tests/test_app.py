@@ -127,6 +127,95 @@ def test_step3_shows_results():
     assert any("URLを 1 件" in s.value for s in at.success)
 
 
+class _FakeProvider:
+    """Gemini の代わりに、決まった答えを返す（ネットワークを使わない）。"""
+
+    name, model, temperature = "fake", "fake-model", 0.0
+
+    def __init__(self):
+        self.calls = 0
+
+    def settings(self):
+        return {"provider": self.name, "model": self.model, "temperature": self.temperature}
+
+    def generate(self, system, user):
+        import json
+
+        from research.llm import LLMResponse
+
+        self.calls += 1
+        answer = {"paper": {"shares_dataset": "yes", "evidence": "The data are openly available."},
+                  "datasets": [{"name": "Fake logs", "url": "https://osf.io/abcde", "availability": "P",
+                                "evidence": "The data are openly available."}],
+                  "urls": [{"id": "U1", "is_data_location": True, "reason": "OSF data page."}]}
+        return LLMResponse(text=json.dumps(answer), input_tokens=10, output_tokens=5, seconds=0.0, model=self.model)
+
+
+def _batch_with_docs():
+    from extract_urls import UrlRecord
+
+    record = UrlRecord(page=1, url="https://osf.io/abcde", sources=["text"])
+    return {
+        "results": [{"conference": "EDM", "year": 2024, "title": "Paper 0", "status": "✅ 成功", "urls": 1,
+                     "error": "", "landing_url": "https://example.org/0"}],
+        "urls": [{"conference": "EDM", "year": 2024, "title": "Paper 0", "doi": "10.1/0", "page": 1,
+                  "url": "https://osf.io/abcde", "source": "text", "link": "https://osf.io/abcde"}],
+        "docs": [{"conference": "EDM", "year": 2024, "title": "Paper 0", "doi": "10.1/0",
+                  "pages": ["We release the data. The data are openly available at https://osf.io/abcde ."],
+                  "records": [record]}],
+    }
+
+
+def test_step3_ai_hidden_without_key(monkeypatch):
+    import ui_ai
+
+    monkeypatch.setattr(ui_ai, "gemini_api_key", lambda: "")
+    at = _page("step3_extract.py")
+    at.session_state["papers"] = [_paper(0)]
+    at.session_state["selected"] = {0}
+    at.session_state["batch"] = _batch_with_docs()
+    at.run()
+    assert not at.exception
+    assert not any("AIで判定" in s.value for s in at.subheader)
+
+
+def test_step3_ai_judge(monkeypatch, tmp_path):
+    import ui_ai
+
+    fake = _FakeProvider()
+    monkeypatch.setattr(ui_ai, "gemini_api_key", lambda: "dummy")
+    monkeypatch.setattr(ui_ai, "make_provider", lambda key: fake)
+    monkeypatch.setattr(ui_ai, "CACHE_DIR", tmp_path)
+    at = _page("step3_extract.py")
+    at.session_state["papers"] = [_paper(0)]
+    at.session_state["selected"] = {0}
+    at.session_state["batch"] = _batch_with_docs()
+    at.run()
+    assert not at.exception
+    assert any("AIで判定する（試験版）" in s.value for s in at.subheader)
+
+    next(b for b in at.button if b.label == "🤖 AIで判定する").click().run()
+    assert not at.exception
+    assert fake.calls == 1
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["公開"] == "1"
+    assert at.session_state["ai"]["datasets"][0]["name"] == "Fake logs"
+    assert at.session_state["ai"]["urls"][0]["url"] == "https://osf.io/abcde"
+
+
+def test_ai_daily_limit(monkeypatch, tmp_path):
+    import ui_ai
+
+    monkeypatch.setattr(ui_ai, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(ui_ai, "DAILY_LIMIT", 0)
+    ui_ai._daily_counter.clear()
+    fake = _FakeProvider()
+    result = ui_ai.judge_papers(_batch_with_docs()["docs"], fake)
+    ui_ai._daily_counter.clear()
+    assert fake.calls == 0
+    assert "1日の上限" in result["stopped"]
+
+
 def test_extract_page_with_sample():
     at = _page("extract.py").run()
     assert not at.exception

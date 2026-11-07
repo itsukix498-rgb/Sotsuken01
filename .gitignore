@@ -3,6 +3,8 @@
 卒研データ/
 # 先生のデータセット、取得した本文、APIの結果のキャッシュ（研究室の未公開データを含む）
 data/
+# LLMの判定結果（先生のデータセットの論文一覧を含む）
+results/
 
 # APIキーなどの秘密情報（Semantic Scholar・LLM）。手元の .env と Streamlit の Secrets にだけ置く
 .env

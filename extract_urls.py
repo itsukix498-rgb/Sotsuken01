@@ -244,18 +244,29 @@ def join_broken_lines(text: str) -> str:
     return "\n".join(result)
 
 
+# 脚注が続けて並ぶと「https://a.org3https://b.org」のように、脚注番号をはさんでURLがつながってしまう。
+# URLの途中に「(数字)https://」が出てきたら、そこで分ける（「?url=https://…」のような正しいURLは分けない）
+_GLUED_URL = re.compile(r"(?<=[^=/:%?&])\d{0,2}(?=(?:https?|ftp)://)", re.IGNORECASE)
+
+
+def split_glued_urls(url: str) -> list[str]:
+    """脚注番号をはさんでつながったURLを、別々のURLに分ける。"""
+    return [part for part in _GLUED_URL.sub("\n", url).split("\n") if part]
+
+
 def extract_urls_from_text(text: str) -> list[str]:
     """テキストからURLを抽出して出現順に返す（このリスト内では重複を除く）。"""
     joined = join_broken_lines(text)
     urls: list[str] = []
     for m in URL_PATTERN.finditer(joined):
-        url = clean_url(m.group())
-        # 「https://」だけのものや、ホスト名に「.」がない断片（「https://github. com」→「https://github」）は捨てる
-        host = re.sub(r"^(?:https?|ftp)://", "", url, flags=re.IGNORECASE).split("/")[0]
-        if "." not in host:
-            continue
-        if url not in urls:
-            urls.append(url)
+        for part in split_glued_urls(m.group()):
+            url = clean_url(part)
+            # 「https://」だけのものや、ホスト名に「.」がない断片（「https://github. com」→「https://github」）は捨てる
+            host = re.sub(r"^(?:https?|ftp)://", "", url, flags=re.IGNORECASE).split("/")[0]
+            if "." not in host:
+                continue
+            if url not in urls:
+                urls.append(url)
     return urls
 
 

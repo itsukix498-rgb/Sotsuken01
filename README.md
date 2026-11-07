@@ -52,7 +52,12 @@ views/step1_search.py      STEP 1 論文を検索するページ
 views/step2_select.py      STEP 2 論文を選ぶページ
 views/step3_extract.py     STEP 3 PDFを取得してURLを抽出するページ
 views/extract.py           手元のPDFからURL抽出するページ
+views/evaluation.py        研究の評価結果ページ（手元のPCに評価結果があるときだけ表示）
 ui_common.py               各ページで共通の表示部品（見た目のCSS・ステップ表示・URL一覧の表）
+ui_ai.py                   STEP 3 の「AIで判定する（試験版）」
+prompts/                   AIに渡す判定用プロンプト（版ごと）
+research/                  研究用の部品（本文の取得・LLMによる判定・評価）
+scripts/                   研究用のスクリプト（判定の一括実行・評価など）
 collect_papers.py          論文一覧の取得（Crossref / Zenodo / OpenAlex / J-STAGE）とPDFの取得
 extract_urls.py            PDFからのURL抽出（コマンドラインでも使えます）
 tests/                     pytest のテスト
@@ -102,6 +107,19 @@ python extract_urls.py paper.pdf
 
 一度公開すれば、GitHubの `main` ブランチに push するたびに、公開中のアプリも自動で更新されます。
 合言葉を変えるときは、Streamlit Community Cloud のアプリの Settings → Secrets で書き換えます（コードの変更は不要です）。
+
+### AIで判定する（試験版）
+
+STEP 3 の結果の下に「🤖 AIで判定する（試験版）」が出ます。取得した論文の本文の一部（URLの前後の文と、データについて書かれた文）を
+Gemini API に送り、手に入れられる教育データセットがあるか、その名前・URL・入手方法（公開／要ログイン／要申請）を判定します
+（研究で調整したプロンプト `prompts/judge_v3.md` を使います。仕組みは `ui_ai.py`）。
+
+- Gemini API のキーがあるときだけ表示されます。公開アプリでは Settings → Secrets に次の1行を足します（手元では `.env` に書きます）
+  ```toml
+  GEMINI_API_KEY = "AI Studio で作ったキー"
+  ```
+- 無料枠を使い切らないよう、1回 10 本まで、アプリ全体で1日 200 本まで（米国太平洋時間の0時＝日本時間17時ごろに戻る）にしています
+- 先生のデータセットはアプリでは使いません
 
 ### 休止を防ぐ見回り
 

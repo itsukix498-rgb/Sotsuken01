@@ -74,6 +74,10 @@ pages = {
         st.Page("views/extract.py", title="手元のPDFからURL抽出", icon="🔗"),
     ],
 }
+# 評価結果のページは、手元のPCに results/ の評価結果があるときだけメニューに出す
+# （研究室の未公開データを含むので GitHub には上げておらず、公開アプリには results/ がない）
+if any(Path("results").glob("eval_*/summary.json")):
+    pages["研究（手元のPCだけ）"] = [st.Page("views/evaluation.py", title="評価結果", icon="📊")]
 nav = st.navigation(pages)
 
 with st.sidebar:

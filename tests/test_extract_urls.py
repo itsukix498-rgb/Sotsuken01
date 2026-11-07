@@ -150,6 +150,26 @@ def test_dot_at_line_end_joined_only_when_next_looks_like_path():
     ]
 
 
+# --- 脚注でつながったURL ----------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # 脚注番号をはさんでURLが続けて並ぶ（実際の論文で起きたケース）
+        ("1https://www.example.org3https://www.sample.org4https://data.example.com/x",
+         ["https://www.example.org", "https://www.sample.org", "https://data.example.com/x"]),
+        ("see https://github.com/lab/data9https://pypi.org/project/tool/",
+         ["https://github.com/lab/data", "https://pypi.org/project/tool/"]),
+        # 番号がなくても、URLが直接つながっていれば分ける
+        ("http://example.org6https://www.youtube.com/", ["http://example.org", "https://www.youtube.com/"]),
+        # クエリの中に入ったURLは分けない
+        ("https://example.org/redirect?url=https://osf.io/abcde", ["https://example.org/redirect?url=https://osf.io/abcde"]),
+    ],
+)
+def test_glued_footnote_urls_are_split(text, expected):
+    assert extract_urls_from_text(text) == expected
+
+
 # --- 日本語の論文 ---------------------------------------------------------------
 
 @pytest.mark.parametrize(

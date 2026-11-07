@@ -106,6 +106,12 @@ class SemanticScholarClient:
         for i in range(0, len(missing), BATCH_SIZE):
             chunk = missing[i:i + BATCH_SIZE]
             r = self._request("POST", "/paper/batch", params={"fields": PAPER_FIELDS}, json={"ids": chunk})
+            if r.status_code == 400 and "No valid paper ids" in r.text:
+                # 送ったIDがどれも Semantic Scholar に登録されていない（例: Zenodo のDOIだけ）。全部「見つからない」とする
+                for pid in chunk:
+                    self._cache_put("paper", pid, None)
+                    result[pid] = None
+                continue
             if r.status_code != 200:
                 raise SemanticScholarError(f"batch の呼び出しに失敗しました（HTTP {r.status_code}: {r.text[:200]}）")
             # 返ってくるリストは送ったIDと同じ順番。見つからないIDは null になる
