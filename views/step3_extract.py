@@ -95,6 +95,7 @@ if not batch:
         progress.progress(1.0, text="完了しました")
         st.session_state["batch"] = {"results": results, "urls": url_list, "docs": docs}
         st.session_state.pop("ai", None)  # 前回のAIの判定結果は消す
+        st.session_state.pop("ai_pending", None)
         st.rerun()
     st.stop()
 
@@ -133,8 +134,10 @@ back, again = st.columns(2)
 if back.button("← 別の論文を選ぶ", width="stretch"):
     st.session_state.pop("batch", None)
     st.session_state.pop("ai", None)
+    st.session_state.pop("ai_pending", None)
     go_to_step(2)
 if again.button("🔍 新しく検索する", width="stretch"):
     st.session_state.pop("batch", None)
     st.session_state.pop("ai", None)
+    st.session_state.pop("ai_pending", None)
     go_to_step(1)

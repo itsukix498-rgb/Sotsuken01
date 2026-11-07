@@ -194,13 +194,68 @@ def test_step3_ai_judge(monkeypatch, tmp_path):
     assert not at.exception
     assert any("AIで判定する（試験版）" in s.value for s in at.subheader)
 
-    next(b for b in at.button if b.label == "🤖 AIで判定する").click().run()
+    next(b for b in at.button if b.label == "🤖 選んだ 1 本をAIで判定する").click().run()
     assert not at.exception
     assert fake.calls == 1
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["公開"] == "1"
     assert at.session_state["ai"]["datasets"][0]["name"] == "Fake logs"
     assert at.session_state["ai"]["urls"][0]["url"] == "https://osf.io/abcde"
+
+    # 結果を消して選び直すと、同じ論文は保存した答えを使い、AIを呼ばない
+    next(b for b in at.button if "別の論文を選んで判定する" in b.label).click().run()
+    assert not at.exception
+    next(b for b in at.button if "AIで判定する" in b.label and b.label.startswith("🤖 選んだ")).click().run()
+    assert fake.calls == 1
+
+
+def test_step3_ai_resumes_pending(monkeypatch, tmp_path):
+    # 判定の途中で実行が打ち切られても、次の実行で「判定する論文」の続きから判定する
+    import ui_ai
+
+    fake = _FakeProvider()
+    monkeypatch.setattr(ui_ai, "gemini_api_key", lambda: "dummy")
+    monkeypatch.setattr(ui_ai, "make_provider", lambda key: fake)
+    monkeypatch.setattr(ui_ai, "CACHE_DIR", tmp_path)
+    at = _page("step3_extract.py")
+    at.session_state["papers"] = [_paper(0)]
+    at.session_state["selected"] = {0}
+    at.session_state["batch"] = _batch_with_docs()
+    at.session_state["ai_pending"] = [0]
+    at.run()
+    assert not at.exception
+    assert fake.calls == 1
+    assert at.session_state["ai"]["papers"][0]["kind"] == "公開"
+    assert "ai_pending" not in at.session_state
+
+
+def _many_docs(n):
+    docs = _batch_with_docs()["docs"]
+    return [{**docs[0], "title": f"Paper {i}"} for i in range(n)]
+
+
+def test_step3_ai_selection_limit(monkeypatch, tmp_path):
+    import ui_ai
+
+    monkeypatch.setattr(ui_ai, "gemini_api_key", lambda: "dummy")
+    monkeypatch.setattr(ui_ai, "make_provider", lambda key: _FakeProvider())
+    monkeypatch.setattr(ui_ai, "CACHE_DIR", tmp_path)
+    batch = _batch_with_docs()
+    batch["docs"] = _many_docs(12)
+    at = _page("step3_extract.py")
+    at.session_state["papers"] = [_paper(0)]
+    at.session_state["selected"] = {0}
+    at.session_state["batch"] = batch
+    at.run()
+    assert not at.exception
+    # 最初は先頭の10本にチェックが入っている
+    assert any(b.label == "🤖 選んだ 10 本をAIで判定する" for b in at.button)
+
+    # 上限を超えて選ぶと、注意が出てボタンが押せなくなる
+    at.session_state[ui_ai.selection_key(batch["docs"])] = set(range(11))
+    at.run()
+    assert any("10 本まで" in w.value for w in at.warning)
+    assert next(b for b in at.button if b.label.startswith("🤖 選んだ")).disabled
 
 
 def test_ai_daily_limit(monkeypatch, tmp_path):
