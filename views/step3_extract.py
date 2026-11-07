@@ -13,13 +13,13 @@ from collect_papers import (
     polite_sleep,
 )
 from extract_urls import PdfOpenError, extract_page_texts, extract_urls_from_pdf, open_pdf_bytes
-from ui_ai import render_ai_section
+from ui_ai import gemini_api_key, split_by_language
 from ui_common import csv_bytes, go_to_step, show_url_table, step_header, url_rows
 
 # 1回にまとめて処理するPDFの上限（相手サーバーへの負担と、公開サーバーの処理時間を考えて）
 MAX_BATCH = 30
 
-st.title("⬇️ URLを抽出")
+st.title("URLを抽出")
 step_header(3)
 
 rows = st.session_state.get("papers")
@@ -68,14 +68,14 @@ if not batch:
         back, run_col = st.columns(2)
         if back.button("← 論文を選び直す", width="stretch"):
             go_to_step(2)
-        run = run_col.button("⬇️ PDFを取得してURLを抽出", type="primary", width="stretch")
+        run = run_col.button("PDFを取得してURLを抽出", type="primary", width="stretch")
 
     if run:
         results, url_list, docs = [], [], []
         progress = st.progress(0.0, text="準備中…")
         for i, (_, paper) in enumerate(target.iterrows(), start=1):
             progress.progress((i - 1) / len(target), text=f"（{i}/{len(target)}）{paper['title'][:60]}")
-            status, error, n_urls = "✅ 成功", "", 0
+            status, error, n_urls = "成功", "", 0
             try:
                 with open_pdf_bytes(download_pdf(paper["pdf_url"]), paper["title"]) as doc:
                     records = extract_urls_from_pdf(doc)
@@ -87,7 +87,7 @@ if not batch:
                 url_list += url_rows(records, conference=paper["conference"], year=paper["year"],
                                      title=paper["title"], doi=paper["doi"])
             except (PdfDownloadError, PdfOpenError) as e:
-                status, error = "⚠️ 失敗", str(e)
+                status, error = "失敗", str(e)
             results.append({"conference": paper["conference"], "year": paper["year"], "title": paper["title"],
                             "status": status, "urls": n_urls, "error": error, "landing_url": paper["landing_url"]})
             if i < len(target):
@@ -101,10 +101,24 @@ if not batch:
 
 # --- 結果 ---------------------------------------------------------------------
 res = pd.DataFrame(batch["results"])
-ok = int((res["status"] == "✅ 成功").sum())
+ok = int((res["status"] == "成功").sum())
 st.success(f"{len(res)} 本中 {ok} 本のPDFを処理し、URLを {len(batch['urls'])} 件見つけました。")
 
-tab_urls, tab_papers = st.tabs([f"🔗 URL一覧（{len(batch['urls'])}）", f"📄 論文ごとの結果（{len(res)}）"])
+# 次のステップ（AIで判定）への案内。このアプリの強みなので、大きく目立たせる。ページは押したときだけ移動する
+docs = batch.get("docs", [])
+if docs and gemini_api_key():
+    eligible, excluded = split_by_language(docs)
+    with st.container(key="pdf_cta"):
+        st.markdown("### 次は STEP 4：AIでデータセットの有無を判定")
+        st.write("URLの一覧から人が探さなくても、AIが論文を読み、"
+                 "**手に入れられる教育データセット**と、その**名前・URL・入手方法**を見つけます。")
+        st.caption(f"AIで判定できる論文：{len(eligible)} 本"
+                   + (f"（日本語など英語以外の論文 {len(excluded)} 本は対象外）" if excluded else ""))
+        if st.button("AIでデータセットを判定する →", type="primary", width="stretch",
+                     disabled=not eligible, key="to_step4"):
+            go_to_step(4)
+
+tab_urls, tab_papers = st.tabs([f"URL一覧（{len(batch['urls'])}）", f"論文ごとの結果（{len(res)}）"])
 with tab_urls:
     show_url_table(batch["urls"], key="batch_urls", label_column="title")
 with tab_papers:
@@ -123,11 +137,8 @@ with tab_papers:
 
 if batch["urls"]:
     urls_df = pd.DataFrame(batch["urls"])[["conference", "year", "title", "doi", "page", "url", "source"]]
-    st.download_button("💾 URL一覧をCSVで保存", data=csv_bytes(urls_df), file_name="paper_urls.csv",
-                       mime="text/csv", type="primary")
-
-# AIで判定する（試験版）。APIキーが設定されているときだけ表示する
-render_ai_section(batch.get("docs", []))
+    st.download_button("URL一覧をCSVで保存", data=csv_bytes(urls_df), file_name="paper_urls.csv",
+                       mime="text/csv")
 
 st.divider()
 back, again = st.columns(2)
@@ -136,7 +147,7 @@ if back.button("← 別の論文を選ぶ", width="stretch"):
     st.session_state.pop("ai", None)
     st.session_state.pop("ai_pending", None)
     go_to_step(2)
-if again.button("🔍 新しく検索する", width="stretch"):
+if again.button("新しく検索する", width="stretch"):
     st.session_state.pop("batch", None)
     st.session_state.pop("ai", None)
     st.session_state.pop("ai_pending", None)

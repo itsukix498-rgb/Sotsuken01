@@ -12,7 +12,7 @@ import streamlit as st
 
 RESULTS = Path(__file__).resolve().parent.parent / "results"
 
-st.title("📊 評価結果（手元のPCだけ）")
+st.title("評価結果（手元のPCだけ）")
 st.caption("LLMの判定を、研究室の調査（先生のデータセット）と答え合わせした結果です。"
            "研究室の未公開データを含むので、公開アプリには表示されません。")
 

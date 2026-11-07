@@ -6,7 +6,7 @@ import streamlit as st
 from collect_papers import PDF_AUTO
 from ui_common import csv_bytes, go_to_step, step_header
 
-st.title("☑️ 論文を選ぶ")
+st.title("論文を選ぶ")
 step_header(2)
 
 rows = st.session_state.get("papers")
@@ -69,7 +69,7 @@ if len(chosen) > len(chosen_auto):
             "論文ページからPDFを保存し、メニューの「手元のPDFからURL抽出」でまとめてアップロードしてください。")
 
 st.download_button(
-    "📄 論文一覧をCSVで保存",
+    "論文一覧をCSVで保存",
     data=csv_bytes(df[["conference", "year", "title", "authors", "doi", "landing_url", "pdf_url", "pdf_status"]]),
     file_name="papers.csv", mime="text/csv",
 )
