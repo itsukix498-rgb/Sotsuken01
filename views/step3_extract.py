@@ -12,7 +12,8 @@ from collect_papers import (
     download_pdf,
     polite_sleep,
 )
-from extract_urls import PdfOpenError, extract_urls_from_pdf, open_pdf_bytes
+from extract_urls import PdfOpenError, extract_page_texts, extract_urls_from_pdf, open_pdf_bytes
+from ui_ai import render_ai_section
 from ui_common import csv_bytes, go_to_step, show_url_table, step_header, url_rows
 
 # 1回にまとめて処理するPDFの上限（相手サーバーへの負担と、公開サーバーの処理時間を考えて）
@@ -70,7 +71,7 @@ if not batch:
         run = run_col.button("⬇️ PDFを取得してURLを抽出", type="primary", width="stretch")
 
     if run:
-        results, url_list = [], []
+        results, url_list, docs = [], [], []
         progress = st.progress(0.0, text="準備中…")
         for i, (_, paper) in enumerate(target.iterrows(), start=1):
             progress.progress((i - 1) / len(target), text=f"（{i}/{len(target)}）{paper['title'][:60]}")
@@ -78,7 +79,11 @@ if not batch:
             try:
                 with open_pdf_bytes(download_pdf(paper["pdf_url"]), paper["title"]) as doc:
                     records = extract_urls_from_pdf(doc)
+                    pages = extract_page_texts(doc)
                 n_urls = len(records)
+                # AIで判定するときのために、本文の文章とURLを（この画面を開いている間だけ）覚えておく
+                docs.append({"conference": paper["conference"], "year": paper["year"], "title": paper["title"],
+                             "doi": paper["doi"], "pages": pages, "records": records})
                 url_list += url_rows(records, conference=paper["conference"], year=paper["year"],
                                      title=paper["title"], doi=paper["doi"])
             except (PdfDownloadError, PdfOpenError) as e:
@@ -88,7 +93,8 @@ if not batch:
             if i < len(target):
                 polite_sleep(JSTAGE_INTERVAL if paper["conference"] in JSTAGE_JOURNALS else 1.0)
         progress.progress(1.0, text="完了しました")
-        st.session_state["batch"] = {"results": results, "urls": url_list}
+        st.session_state["batch"] = {"results": results, "urls": url_list, "docs": docs}
+        st.session_state.pop("ai", None)  # 前回のAIの判定結果は消す
         st.rerun()
     st.stop()
 
@@ -119,11 +125,16 @@ if batch["urls"]:
     st.download_button("💾 URL一覧をCSVで保存", data=csv_bytes(urls_df), file_name="paper_urls.csv",
                        mime="text/csv", type="primary")
 
+# AIで判定する（試験版）。APIキーが設定されているときだけ表示する
+render_ai_section(batch.get("docs", []))
+
 st.divider()
 back, again = st.columns(2)
 if back.button("← 別の論文を選ぶ", width="stretch"):
     st.session_state.pop("batch", None)
+    st.session_state.pop("ai", None)
     go_to_step(2)
 if again.button("🔍 新しく検索する", width="stretch"):
     st.session_state.pop("batch", None)
+    st.session_state.pop("ai", None)
     go_to_step(1)

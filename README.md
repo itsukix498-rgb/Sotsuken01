@@ -52,7 +52,12 @@ views/step1_search.py      STEP 1 論文を検索するページ
 views/step2_select.py      STEP 2 論文を選ぶページ
 views/step3_extract.py     STEP 3 PDFを取得してURLを抽出するページ
 views/extract.py           手元のPDFからURL抽出するページ
+views/evaluation.py        研究の評価結果ページ（手元のPCに評価結果があるときだけ表示）
 ui_common.py               各ページで共通の表示部品（見た目のCSS・ステップ表示・URL一覧の表）
+ui_ai.py                   STEP 3 の「AIで判定する（試験版）」
+prompts/                   AIに渡す判定用プロンプト（版ごと）
+research/                  研究用の部品（本文の取得・LLMによる判定・評価）
+scripts/                   研究用のスクリプト（判定の一括実行・評価など）
 collect_papers.py          論文一覧の取得（Crossref / Zenodo / OpenAlex / J-STAGE）とPDFの取得
 extract_urls.py            PDFからのURL抽出（コマンドラインでも使えます）
 tests/                     pytest のテスト
@@ -103,6 +108,19 @@ python extract_urls.py paper.pdf
 一度公開すれば、GitHubの `main` ブランチに push するたびに、公開中のアプリも自動で更新されます。
 合言葉を変えるときは、Streamlit Community Cloud のアプリの Settings → Secrets で書き換えます（コードの変更は不要です）。
 
+### AIで判定する（試験版）
+
+STEP 3 の結果の下に「🤖 AIで判定する（試験版）」が出ます。取得した論文の本文の一部（URLの前後の文と、データについて書かれた文）を
+Gemini API に送り、手に入れられる教育データセットがあるか、その名前・URL・入手方法（公開／要ログイン／要申請）を判定します
+（研究で調整したプロンプト `prompts/judge_v3.md` を使います。仕組みは `ui_ai.py`）。
+
+- Gemini API のキーがあるときだけ表示されます。公開アプリでは Settings → Secrets に次の1行を足します（手元では `.env` に書きます）
+  ```toml
+  GEMINI_API_KEY = "AI Studio で作ったキー"
+  ```
+- 無料枠を使い切らないよう、1回 10 本まで、アプリ全体で1日 200 本まで（米国太平洋時間の0時＝日本時間17時ごろに戻る）にしています
+- 先生のデータセットはアプリでは使いません
+
 ### 休止を防ぐ見回り
 
 Streamlit Community Cloud は、12時間アクセスがないとアプリを休止し、「Yes, get this app back up!」ボタンを押すまで起動しません。
@@ -113,6 +131,46 @@ Streamlit Community Cloud は、12時間アクセスがないとアプリを休�
 - 「Actions」タブ →「Keep app awake」→「Run workflow」で、すぐに手動で動かすこともできます
 - GitHub は、リポジトリに60日間更新がないと定期実行を自動で止めます。止まったら「Actions」タブから有効に戻してください
 - 公開URLを変えたときは、`keep-awake.yml` の `APP_URL` も書き換えます
+
+## 研究用：先生のデータセットの論文の本文を取得する
+
+研究室の人手調査の結果（先生のデータセット）に載っている論文を Semantic Scholar で特定し、本文を取得して状況をまとめます。
+先生のデータセットは研究室の未公開データなので `data/` に置き、GitHub には上げません（`.gitignore` で除外）。
+外部に送るのは DOI・タイトル（Semantic Scholar・OpenAlex）と、論文PDFのダウンロードだけです。
+
+準備
+
+1. `.env.example` をコピーして `.env` を作り、Semantic Scholar の APIキーを書く（キーなしでも動くが、混雑で失敗しやすい）
+2. 先生のデータセットを `data/teacher_dataset.xlsx` に置く
+3. 列の対応を `data/column_map.json` に書く（書き方は `research/column_map.example.json`）
+
+実行
+
+```bash
+# 列の構成を確認する（先頭の数行を表示するだけ）
+python scripts/build_papers_status.py data/teacher_dataset.xlsx --describe
+
+# 会議ごとに3本ずつ試す
+python scripts/build_papers_status.py data/teacher_dataset.xlsx --per-venue 3
+
+# 全件
+python scripts/build_papers_status.py data/teacher_dataset.xlsx
+```
+
+結果は `data/papers_status.csv` に保存され、本文を取得できた割合が会議別・年別に表示されます。
+
+本文の取り方（`research/fulltext.py`）
+
+- S2ORC（Semantic Scholar の本文データ）は1本ずつ取るAPIがなく、一括ダウンロード（約120〜180GB）しかないため、本文があるかどうかを記録するだけにしています
+- PDFは次の順に試します：Semantic Scholar のオープンアクセスPDF → arXiv 版 → OpenAlex のPDF → 先生のシートのURL（EDM公式サイトのPDFなど）
+- ACM（dl.acm.org）は自動取得が禁止されているので、問い合わせません
+- Semantic Scholar・OpenAlex の結果と取得した本文は `data/cache/` に保存し、再実行のときは同じリクエストを送りません
+
+出典の表示（Semantic Scholar API の利用条件）
+
+- 論文情報の一部は [Semantic Scholar](https://www.semanticscholar.org/) から取得しています
+- 卒論・発表などで結果を使うときは、次の論文を引用します：
+  Kinney, R. et al. "The Semantic Scholar Open Data Platform." arXiv:2301.10140 (2023).
 
 ## テスト
 

@@ -3,3 +3,6 @@ streamlit>=1.46
 pandas
 requests
 pytest>=7.0
+# 実験用スクリプト（scripts/build_papers_status.py）で使う
+python-dotenv
+openpyxl

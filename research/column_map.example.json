@@ -1,0 +1,19 @@
+{
+  "_説明": "先生のデータセットの列の対応の書き方の例です。列名は確認してから書きます。コピーして data/column_map.json として保存してください（data/ は GitHub に上げません）。header_row と data_start_row は Excel の行番号（1始まり）です。",
+  "sheets": [
+    {
+      "sheet": "Selected papers",
+      "role": "selected",
+      "header_row": 2,
+      "data_start_row": 4,
+      "columns": {
+        "paper_type": "Paper type",
+        "venue": "Venue name",
+        "year": "Year",
+        "title": "Paper title",
+        "paper_url": "Paper URL (or DOI link if it exists)",
+        "dataset_name": "Data set name(s)"
+      }
+    }
+  ]
+}
