@@ -1,4 +1,4 @@
-﻿"""STEP 1 論文を検索するページ：会議・学会誌と年を選んで論文一覧を集める。"""
+"""STEP 1 論文を検索するページ：会議・学会誌と年を選んで論文一覧を集める。"""
 
 import streamlit as st
 
@@ -15,6 +15,7 @@ from ui_common import go_to_step, step_header
 
 # 1回にまとめて処理するPDFの上限（相手サーバーへの負担と、公開サーバーの処理時間を考えて）
 MAX_BATCH = 30
+HISTORY_SIZE = 5  # 検索の履歴に残す件数
 
 
 @st.cache_data(ttl=6 * 60 * 60, show_spinner=False)
@@ -40,7 +41,7 @@ def default_selection(rows: list[dict]) -> set[int]:
     return selected
 
 
-st.title("🔍 論文を検索")
+st.title("論文を検索")
 # ページを移動するとウィジェットの状態は消えるので、前回の条件は別に保存しておき初期値に使う
 form = st.session_state.get("form", {})
 step_header(1)
@@ -48,11 +49,11 @@ st.write("調べたい会議・学会誌と年を選んで、論文の一覧を�
 
 with st.container(border=True):
     intl = st.pills(
-        "🌏 国際会議（英語）", list(CONFERENCES), selection_mode="multi", default=form.get("intl", ["EDM"]),
+        "国際会議（英語）", list(CONFERENCES), selection_mode="multi", default=form.get("intl", ["EDM"]),
         help="\n".join(f"- **{k}**: {v}" for k, v in CONFERENCES.items()),
     )
     domestic = st.pills(
-        "🗾 国内の学会誌・大会（日本語・J-STAGE）", list(JSTAGE_JOURNALS), selection_mode="multi",
+        "国内の学会誌・大会（日本語・J-STAGE）", list(JSTAGE_JOURNALS), selection_mode="multi",
         default=form.get("domestic", []),
         help="\n".join(f"- **{k}**: {v['material']}" for k, v in JSTAGE_JOURNALS.items()),
     )
@@ -84,29 +85,48 @@ with st.container(border=True):
         st.warning("組み合わせが多すぎます。会議・学会誌×年の組み合わせを6つまでにしてください。")
     else:
         st.caption(f"{len(conferences)} 件 × {len(years)} 年 を検索します。")
-    clicked = st.button("🔍 検索して次へ", type="primary", disabled=not conferences or too_many, width="stretch")
+    clicked = st.button("検索して次へ", type="primary", disabled=not conferences or too_many, width="stretch")
     if domestic:
         # J-STAGE WebAPI の利用条件として、提供元の表示とJ-STAGEへのリンクが必要
         st.caption("国内の学会誌・大会の論文情報は [J-STAGE](https://www.jstage.jst.go.jp/) から取得しています。"
                    "Powered by J-STAGE")
 
+def open_result(entry: dict) -> None:
+    """検索の結果（今の検索、または履歴から選んだもの）を開いて STEP 2 へ進む。"""
+    st.session_state["form"] = entry["form"]
+    st.session_state["papers"] = entry["rows"]
+    st.session_state["search_notes"] = entry["notes"]
+    st.session_state["search_label"] = entry["label"]
+    st.session_state["selected"] = default_selection(entry["rows"])
+    # 前回の抽出結果とAIの判定結果は、別の論文のものなので消す
+    for key in ("batch", "ai", "ai_pending"):
+        st.session_state.pop(key, None)
+    go_to_step(2)
+
+
 if clicked:
     with st.spinner("論文データベースを検索しています…（数秒〜30秒ほど）"):
         rows, notes = search(tuple(conferences), tuple(years), keyword.strip())
-    st.session_state["form"] = {"intl": intl, "domestic": domestic, "keyword": keyword, "years": (year_from, year_to)}
-    st.session_state["papers"] = rows
-    st.session_state["search_notes"] = notes
-    st.session_state["search_label"] = (
-        "・".join(conferences)
-        + (f" / {year_from}年" if year_from == year_to else f" / {year_from}〜{year_to}年")
-        + (f" / 「{keyword}」" if keyword else ""))
-    st.session_state["selected"] = default_selection(rows)
-    st.session_state.pop("batch", None)  # 前回の抽出結果は消す
-    go_to_step(2)
+    label = ("・".join(conferences)
+             + (f" / {year_from}年" if year_from == year_to else f" / {year_from}〜{year_to}年")
+             + (f" / 「{keyword}」" if keyword else ""))
+    entry = {"label": label, "rows": rows, "notes": notes,
+             "form": {"intl": intl, "domestic": domestic, "keyword": keyword, "years": (year_from, year_to)}}
+    # 検索の履歴（この画面を開いている間だけ）。同じ条件は1つにまとめ、新しい順に5件まで残す
+    history = [h for h in st.session_state.get("history", []) if h["label"] != label]
+    st.session_state["history"] = [entry] + history[:HISTORY_SIZE - 1]
+    open_result(entry)
 
-# 前回の検索結果があれば、そのまま次のステップへ進めるようにする
-if st.session_state.get("papers") is not None:
-    with st.container(border=True):
-        st.caption(f"前回の検索：{st.session_state.get('search_label', '')}（{len(st.session_state['papers'])} 件）")
-        if st.button("前回の結果で STEP 2 へ →"):
-            go_to_step(2)
+# 検索の履歴：前に検索した結果を、もう一度検索せずに開き直せる
+history = st.session_state.get("history", [])
+if history:
+    st.subheader("検索の履歴")
+    st.caption("この画面を開いている間の検索です（ページを閉じたり再読み込みしたりすると消えます）。")
+    current = st.session_state.get("search_label")
+    for i, entry in enumerate(history):
+        with st.container(border=True):
+            text_col, button_col = st.columns([3, 1], vertical_alignment="center")
+            mark = "（表示中）" if entry["label"] == current else ""
+            text_col.markdown(f"**{entry['label']}**{mark}　{len(entry['rows'])} 件")
+            if button_col.button("開く", key=f"history_{i}", width="stretch"):
+                open_result(entry)

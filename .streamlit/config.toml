@@ -11,4 +11,9 @@ gatherUsageStats = false
 maxUploadSize = 50
 
 [theme]
-primaryColor = "#2563eb"
+# 落ち着いた深緑を基調にする（ボタン・選択中の項目など）
+base = "light"
+primaryColor = "#2E5E4E"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F5F3"
+textColor = "#1F2A27"
