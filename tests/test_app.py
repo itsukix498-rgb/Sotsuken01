@@ -109,8 +109,9 @@ def test_step1_search_moves_to_step2(fake_search):
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["見つかった論文"] == "2"
     assert metrics["PDFを自動取得できる"] == "1"
-    # PDFを自動取得できる論文には、最初からチェックが入っている
-    assert at.session_state["selected"] == {0}
+    # 最初はどの論文も選ばれていない（PDFを取得する論文は自分で選ぶ）
+    assert at.session_state["selected"] == set()
+    assert next(b for b in at.button if b.label.startswith("次へ")).disabled
 
     # STEP 1 に戻ると、検索の履歴から前の結果を開き直せる
     at.switch_page("views/step1_search.py").run()
@@ -133,6 +134,30 @@ def test_step2_keeps_selection():
     at.run()
     assert not at.exception
     assert any("1 本を選択中" in c.value for c in at.caption)
+
+
+def test_step2_select_all_and_none():
+    at = _page("step2_select.py")
+    at.session_state["papers"] = [_paper(0), _paper(1), _paper(2, pdf=False)]
+    at.session_state["selected"] = set()
+    at.run()
+    assert not at.exception
+    # 「すべて選ぶ」は、PDFを自動取得できる論文だけを選ぶ
+    next(b for b in at.button if b.label == "すべて選ぶ").click().run()
+    assert at.session_state["selected"] == {0, 1}
+    assert not next(b for b in at.button if b.label.startswith("次へ")).disabled
+    next(b for b in at.button if b.label == "すべて外す").click().run()
+    assert at.session_state["selected"] == set()
+
+
+def test_limited_selection():
+    from ui_common import MAX_BATCH, limited_selection
+
+    rows = [_paper(i) for i in range(35)]
+    assert limited_selection(rows, range(35)) == set(range(MAX_BATCH))
+    rows = [_paper(i, conference="JSET論文誌") for i in range(12)] + [_paper(12, pdf=False)]
+    # J-STAGE は1回10本まで。PDFを自動取得できない論文は選ばない
+    assert limited_selection(rows, range(13)) == set(range(10))
 
 
 def test_step3_limits_jstage_batch():
@@ -252,6 +277,8 @@ def test_step4_ai_judge(fake_ai):
     assert fake_ai.calls == 1
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["公開"] == "1"
+    # 判定の後も、今日あと何本判定できるかを表示する
+    assert "今日あと" in _texts(at)
     assert at.session_state["ai"]["datasets"][0]["name"] == "Fake logs"
     assert at.session_state["ai"]["urls"][0]["url"] == "https://osf.io/abcde"
 
@@ -312,6 +339,14 @@ def test_ai_daily_limit(monkeypatch, tmp_path):
     ui_ai._daily_counter.clear()
     assert fake.calls == 0
     assert "1日の上限" in result["stopped"]
+
+
+def test_remaining_html():
+    import ui_ai
+
+    assert "<b>12</b>" in ui_ai.remaining_html(12)
+    # 上限に達したら、いつ戻るかを知らせる
+    assert "17時" in ui_ai.remaining_html(0)
 
 
 def test_paper_language():

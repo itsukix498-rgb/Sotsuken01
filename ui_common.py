@@ -20,12 +20,14 @@ GUIDE_PAGE = "views/guide.py"
 UPLOAD_PAGE = "views/extract.py"
 
 # 画面全体の見た目の調整（Streamlit の標準部品に CSS を当てる）
-# 色は .streamlit/config.toml の primaryColor（深緑 #2E5E4E）に合わせる
+# 色・文字・角の丸みは .streamlit/config.toml の [theme]（青緑 #1486AD、Noto Sans JP・Montserrat）に合わせる。
+# 大学のサイトのような、余白の多い・四角に近い・すっきりした見た目にする
 _STYLE = """
 <style>
 :root {
-  --pdf-green: #2E5E4E; --pdf-green-dark: #234A3D; --pdf-green-soft: #E8F0EC;
-  --pdf-border: rgba(31, 42, 39, 0.14); --pdf-muted: rgba(31, 42, 39, 0.64);
+  --pdf-primary: #1486AD; --pdf-primary-dark: #0F6A89; --pdf-tint: #EEF7FB;
+  --pdf-border: #D3E5EC; --pdf-muted: rgba(34, 34, 34, 0.62);
+  --pdf-en: "Montserrat", "Noto Sans JP", sans-serif;
 }
 
 /* 本文の幅：大きな画面でも横に伸びすぎないよう上限を付けて中央にそろえる */
@@ -35,6 +37,12 @@ _STYLE = """
   [data-testid="stMainBlockContainer"] { padding-left: 1rem; padding-right: 1rem; padding-top: 3.5rem; }
   h1 { font-size: 1.75rem !important; }
 }
+/* 文字の間隔を少し広げて読みやすくする（アイコンの文字には付けない。付けるとアイコンが文字で表示されるため） */
+[data-testid="stMarkdownContainer"], [data-testid="stWidgetLabel"], .pdf-hero, .pdf-steps, .pdf-flow { letter-spacing: 0.04em; }
+[data-testid="stIconMaterial"] { letter-spacing: normal !important; }
+/* 見出し：英字は Montserrat、日本語の文字は Noto Sans JP で表示する */
+h1, h2, h3, h4, h5, h6 { font-family: "Montserrat", "Noto Sans JP", sans-serif !important; }
+
 /* 説明の表（使い方・対応状況など）：画面より広いときは、ページ全体ではなく表の中だけ横にスクロールする */
 [data-testid="stMarkdownContainer"] table { display: block; max-width: 100%; overflow-x: auto; }
 /* 1列目の短い見出しは折り返さない（スマホで1文字ずつ改行されないように） */
@@ -54,48 +62,72 @@ _STYLE = """
 [data-testid="stSidebarCollapseButton"] [data-testid="stIconMaterial"]::after { content: "close"; font-size: 1.6rem; }
 [data-testid="stSidebarCollapseButton"] { visibility: visible !important; }
 
+/* 見出しの上の小さな英語のラベル（例：STEP 1 / SEARCH） */
+.pdf-eyebrow {
+  display: flex; align-items: center; gap: 0.6rem; margin: 0 0 -0.4rem; color: var(--pdf-primary);
+  font-family: var(--pdf-en); font-size: 0.8rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase;
+}
+.pdf-eyebrow::before { content: ""; width: 1.6rem; height: 1px; background: var(--pdf-primary); }
+
 /* ステップの進み具合の表示 */
-.pdf-steps { display: flex; gap: 0.5rem; margin: 0 0 1rem; }
+.pdf-steps { display: flex; gap: 0.5rem; margin: 0 0 1.25rem; }
 .pdf-step {
   flex: 1; display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem;
-  border-radius: 0.6rem; border: 1px solid rgba(49, 51, 63, 0.15); color: rgba(49, 51, 63, 0.55);
+  border-radius: 0.25rem; border: 1px solid var(--pdf-border); color: var(--pdf-muted);
   font-size: 0.9rem; line-height: 1.3; min-width: 0;
 }
-.pdf-step b { flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 1.6rem; height: 1.6rem; border-radius: 50%; background: rgba(49, 51, 63, 0.08); font-size: 0.85rem; }
-.pdf-step.done { color: var(--pdf-green); border-color: rgba(46, 94, 78, 0.35); }
-.pdf-step.done b { background: var(--pdf-green-soft); }
-.pdf-step.current { color: #fff; background: var(--pdf-green); border-color: var(--pdf-green); font-weight: 600; }
+.pdf-step b { flex: none; display: inline-flex; align-items: center; justify-content: center; font-family: var(--pdf-en);
+  width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--pdf-tint); font-size: 0.85rem; font-weight: 500; }
+.pdf-step.done { color: var(--pdf-primary); }
+.pdf-step.current { color: #fff; background: var(--pdf-primary); border-color: var(--pdf-primary); font-weight: 500; }
 .pdf-step.current b { background: rgba(255, 255, 255, 0.22); }
 @media (max-width: 640px) {
   .pdf-steps { gap: 0.3rem; }
   .pdf-step { flex-direction: column; text-align: center; gap: 0.25rem; padding: 0.45rem 0.15rem; font-size: 0.72rem; }
 }
 
-/* 大きな見出し（合言葉のページ・ホーム） */
-.pdf-hero { padding: 0.5rem 0 1rem; }
-.pdf-hero .pdf-kicker { color: var(--pdf-green); font-weight: 600; font-size: 0.9rem; margin: 0; }
-.pdf-hero .pdf-name { font-size: clamp(2rem, 6vw, 3rem); font-weight: 700; line-height: 1.15; margin: 0.3rem 0 0.6rem; }
-.pdf-hero .pdf-lead { font-size: clamp(1rem, 2.6vw, 1.2rem); color: var(--pdf-muted); margin: 0; line-height: 1.6; }
+/* 大きな見出し（合言葉のページ・ホーム）：薄い水色の帯に、アプリ名を大きく表示する */
+.pdf-hero {
+  background: var(--pdf-tint); border-top: 3px solid var(--pdf-primary);
+  padding: 2.4rem 2.2rem 2.2rem; margin: 0 0 1.75rem;
+}
+.pdf-hero .pdf-kicker { color: var(--pdf-primary); font-weight: 500; font-size: 0.9rem; margin: 0; }
+.pdf-hero .pdf-name {
+  font-family: var(--pdf-en); font-size: clamp(2.1rem, 6.5vw, 3.4rem); font-weight: 500;
+  letter-spacing: 0.02em; line-height: 1.15; margin: 0.5rem 0 0.9rem; color: #222;
+}
+.pdf-hero .pdf-lead { font-size: clamp(1rem, 2.6vw, 1.15rem); color: #333; margin: 0; line-height: 1.8; }
+@media (max-width: 640px) { .pdf-hero { padding: 1.6rem 1.1rem 1.5rem; } }
 
-/* できることの流れ（1 → 4） */
+/* できることの流れ（1 → 4。使い方のページで使う） */
 .pdf-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0.5rem 0 1rem; }
-.pdf-flow div { border: 1px solid var(--pdf-border); border-radius: 0.6rem; padding: 0.6rem 0.75rem; font-size: 0.92rem; line-height: 1.4; }
-.pdf-flow b { display: block; color: var(--pdf-green); font-size: 0.78rem; margin-bottom: 0.15rem; }
-.pdf-flow div.pdf-strong { background: var(--pdf-green-soft); border-color: rgba(46, 94, 78, 0.35); }
+.pdf-flow div { border: 1px solid var(--pdf-border); border-radius: 0.25rem; padding: 0.7rem 0.8rem; font-size: 0.92rem; line-height: 1.5; }
+.pdf-flow b { display: block; color: var(--pdf-primary); font-family: var(--pdf-en); font-weight: 500; font-size: 0.8rem; margin-bottom: 0.15rem; }
+.pdf-flow div.pdf-strong { background: var(--pdf-tint); border-color: var(--pdf-primary); }
 @media (max-width: 640px) { .pdf-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* カード（ホームの入口・STEP 4 への案内）。st.container(key=...) に付く st-key-○○ のクラスで見た目を付ける */
 [class*="st-key-pdf_card"] {
-  border: 1px solid var(--pdf-border); border-radius: 0.8rem; padding: 1.1rem 1.1rem 1rem; height: 100%;
+  border: 1px solid var(--pdf-border); border-top: 3px solid var(--pdf-border); border-radius: 0.25rem;
+  padding: 1.3rem 1.2rem 1.1rem; height: 100%;
 }
+[class*="st-key-pdf_card_main"] { background: var(--pdf-tint); border-top-color: var(--pdf-primary); }
 /* 横に並んだカードの高さをそろえ、ボタンをカードの下端に置く */
 [data-testid="stLayoutWrapper"]:has(> [class*="st-key-pdf_card"]) { height: 100%; }
 [class*="st-key-pdf_card"] > div:last-child { margin-top: auto; }
-[class*="st-key-pdf_card_main"], .st-key-pdf_cta {
-  background: var(--pdf-green-soft); border-color: rgba(46, 94, 78, 0.35);
+.st-key-pdf_cta {
+  background: var(--pdf-tint); border: 1px solid var(--pdf-border); border-left: 4px solid var(--pdf-primary);
+  border-radius: 0.25rem; padding: 1.3rem 1.3rem 1.2rem; margin: 1rem 0 1.5rem;
 }
-.st-key-pdf_cta { border: 1px solid rgba(46, 94, 78, 0.35); border-radius: 0.8rem; padding: 1.2rem; margin: 1rem 0; }
+
+/* AIの判定の「今日あと〇本」 */
+.pdf-remaining {
+  display: inline-flex; align-items: baseline; gap: 0.35rem; flex-wrap: wrap; padding: 0.35rem 0.9rem;
+  border: 1px solid var(--pdf-primary); border-radius: 999px; color: var(--pdf-primary); font-size: 0.88rem;
+}
+.pdf-remaining b { font-family: var(--pdf-en); font-size: 1.15rem; font-weight: 600; }
+.pdf-remaining small { color: var(--pdf-muted); font-size: 0.75rem; }
+.pdf-remaining.pdf-empty { border-color: #C03A3A; color: #C03A3A; }
 </style>
 """
 
@@ -109,12 +141,18 @@ def apply_style() -> None:
 
 
 def hero(kicker: str, name: str, lead: str) -> None:
-    """ページ上部の大きな見出し（小さな見出し・アプリ名・説明の一文）。"""
+    """ページ上部の大きな見出し（小さな見出し・アプリ名・説明の一文）。薄い水色の帯に表示する。"""
     st.html(f'<div class="pdf-hero"><p class="pdf-kicker">{kicker}</p>'
             f'<p class="pdf-name">{name}</p><p class="pdf-lead">{lead}</p></div>')
 
 
-# このアプリでできることの流れ（合言葉のページ・ホーム・使い方で共通）
+def page_title(eyebrow: str, title: str) -> None:
+    """ページの見出し。上に小さな英語のラベル（例：STEP 1 / SEARCH）を付ける。"""
+    st.html(f'<p class="pdf-eyebrow">{eyebrow}</p>')
+    st.title(title)
+
+
+# このアプリでできることの流れ（使い方のページで使う）
 FLOW = [
     ("1", "論文を集める", "会議と年を選んで一覧にする"),
     ("2", "論文を選ぶ", "調べたい論文にチェック"),
@@ -140,6 +178,29 @@ def step_header(current: int) -> None:
         mark = "✓" if n < current else str(n)
         items.append(f'<div class="pdf-step {state}"><b>{mark}</b><span>{label}</span></div>')
     st.html(f'<div class="pdf-steps">{"".join(items)}</div>')
+
+
+MAX_BATCH = 30  # 1回にまとめて取得するPDFの上限（相手サーバーへの負担と、公開サーバーの処理時間を考えて）
+
+
+def limited_selection(rows: list[dict], indices) -> set[int]:
+    """indices の論文のうち、PDFを自動取得できるものを、1回に取得できる本数まで（上から順に）選ぶ。
+
+    J-STAGE は利用規約に配慮して1回 JSTAGE_MAX_BATCH 本まで、全体で MAX_BATCH 本まで。
+    """
+    from collect_papers import JSTAGE_JOURNALS, JSTAGE_MAX_BATCH, PDF_AUTO
+
+    selected, n_jstage = set(), 0
+    for i in indices:
+        row = rows[i]
+        if row["pdf_status"] != PDF_AUTO or len(selected) >= MAX_BATCH:
+            continue
+        if row["conference"] in JSTAGE_JOURNALS:
+            if n_jstage >= JSTAGE_MAX_BATCH:
+                continue
+            n_jstage += 1
+        selected.add(i)
+    return selected
 
 
 def go_to_step(n: int) -> None:

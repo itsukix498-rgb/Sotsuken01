@@ -7,7 +7,7 @@ import streamlit as st
 
 from extract_urls import PdfOpenError, extract_page_texts, extract_urls_from_pdf, open_pdf_bytes
 from ui_ai import render_ai_section
-from ui_common import csv_bytes, show_url_table, url_rows
+from ui_common import csv_bytes, page_title, show_url_table, url_rows
 
 SAMPLE_PDF = Path(__file__).resolve().parent.parent / "samples" / "sample_paper.pdf"
 OK = "成功"
@@ -20,7 +20,7 @@ def run_extraction(data: bytes, name: str):
         return extract_urls_from_pdf(doc), doc.page_count, extract_page_texts(doc)
 
 
-st.title("手元の論文を調べる")
+page_title("Upload", "手元の論文を調べる")
 st.write("持っている論文のPDFをアップロードすると、本文とリンクに含まれるURLを一覧にします。"
          "「論文を検索」で自動取得できなかった論文（LAKなど）も、PDFを保存してここで処理できます。"
          "英語の論文は、AIでデータセットの有無も判定できます。")

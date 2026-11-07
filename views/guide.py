@@ -3,9 +3,9 @@
 import streamlit as st
 
 from ui_ai import DAILY_LIMIT, MAX_AI_PAPERS
-from ui_common import UPLOAD_PAGE, flow, go_to_step
+from ui_common import UPLOAD_PAGE, flow, go_to_step, page_title
 
-st.title("使い方")
+page_title("Guide", "使い方")
 st.write("このアプリは、学習分析・教育データマイニングの論文を読んで、"
          "**ほかの研究に使える教育データセット**（学習の記録、成績、アンケートなど）と、その入手方法を見つけます。")
 flow()

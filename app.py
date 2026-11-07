@@ -21,7 +21,7 @@ from pathlib import Path
 import streamlit as st
 from streamlit import config as st_config
 
-from ui_common import GUIDE_PAGE, HOME_PAGE, STEP_PAGES, UPLOAD_PAGE, apply_style, flow, hero
+from ui_common import GUIDE_PAGE, HOME_PAGE, STEP_PAGES, UPLOAD_PAGE, apply_style, hero
 
 st.set_page_config(page_title="Paper Data Finder", page_icon=":material/menu_book:", layout="wide",
                    initial_sidebar_state="collapsed")
@@ -51,7 +51,6 @@ def check_password() -> bool:
     with center:
         hero("研究室メンバー向け・研究用", "Paper Data Finder",
              "論文を読んで、使える教育データセットを見つけるツールです。")
-        flow()
         with st.form("login", border=True):
             st.markdown("**合言葉を入力してください**")
             st.caption("このアプリは研究室のメンバーだけが使えます。合言葉は研究室で共有しているものです。")

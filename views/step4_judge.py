@@ -3,9 +3,9 @@
 import streamlit as st
 
 from ui_ai import render_ai_section
-from ui_common import go_to_step, step_header
+from ui_common import go_to_step, page_title, step_header
 
-st.title("AIで判定")
+page_title("STEP 4 / AI Check", "AIで判定")
 step_header(4)
 st.write("STEP 3 で取得した論文を AI（Google Gemini）が読み、**手に入れられる教育データセットがあるか**と、"
          "その**名前・URL・入手方法**を判定します（試験版）。")

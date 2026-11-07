@@ -7,14 +7,11 @@ from collect_papers import (
     JSTAGE_INTERVAL,
     JSTAGE_JOURNALS,
     JSTAGE_MAX_BATCH,
-    PDF_AUTO,
     YEAR_RANGES,
     collect_papers,
 )
-from ui_common import go_to_step, step_header
+from ui_common import go_to_step, page_title, step_header
 
-# 1回にまとめて処理するPDFの上限（相手サーバーへの負担と、公開サーバーの処理時間を考えて）
-MAX_BATCH = 30
 HISTORY_SIZE = 5  # 検索の履歴に残す件数
 
 
@@ -25,23 +22,7 @@ def search(conferences: tuple, years: tuple, keyword: str):
     return [p.to_row() for p in papers], notes
 
 
-def default_selection(rows: list[dict]) -> set[int]:
-    """最初にチェックを入れておく論文（PDFを自動取得できるものを、処理できる本数まで）。"""
-    selected, n_jstage, n_other = set(), 0, 0
-    for i, row in enumerate(rows):
-        if row["pdf_status"] != PDF_AUTO:
-            continue
-        if row["conference"] in JSTAGE_JOURNALS:
-            if n_jstage < JSTAGE_MAX_BATCH and n_jstage + n_other < MAX_BATCH:
-                selected.add(i)
-                n_jstage += 1
-        elif n_jstage + n_other < MAX_BATCH:
-            selected.add(i)
-            n_other += 1
-    return selected
-
-
-st.title("論文を検索")
+page_title("STEP 1 / Search", "論文を検索")
 # ページを移動するとウィジェットの状態は消えるので、前回の条件は別に保存しておき初期値に使う
 form = st.session_state.get("form", {})
 step_header(1)
@@ -97,7 +78,8 @@ def open_result(entry: dict) -> None:
     st.session_state["papers"] = entry["rows"]
     st.session_state["search_notes"] = entry["notes"]
     st.session_state["search_label"] = entry["label"]
-    st.session_state["selected"] = default_selection(entry["rows"])
+    # 最初はどの論文も選ばない（STEP 2 で、PDFを取得したい論文を自分で選ぶ）
+    st.session_state["selected"] = set()
     # 前回の抽出結果とAIの判定結果は、別の論文のものなので消す
     for key in ("batch", "ai", "ai_pending"):
         st.session_state.pop(key, None)
