@@ -12,6 +12,7 @@ Gemini API に送り、次の2段で判定させる（研究用のスクリプ�
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import threading
@@ -166,31 +167,89 @@ def render_ai_section(docs: list[dict]) -> None:
     st.divider()
     st.subheader("🤖 AIで判定する（試験版）")
     result = st.session_state.get("ai")
-    if result is None:
-        target = docs[:MAX_AI_PAPERS]
-        left = remaining_today()
-        st.write("取得した論文を AI（Google Gemini）が読み、**手に入れられる教育データセットがあるか**と、"
-                 "その**名前・URL・入手方法**を判定します。")
-        st.caption(
-            f"- 1回に判定するのは {MAX_AI_PAPERS} 本までです（今回 {len(target)} 本）。1本あたり10秒ほどかかります。\n"
-            f"- 今日あと {left} 本まで判定できます（アプリを使う全員の合計）。\n"
-            "- Gemini には論文の本文の一部（URLの前後の文と、データについて書かれた文）とURLだけを送ります。"
-            "無料枠のため、送った内容が Google のサービス改善に使われることがあります。\n"
-            "- AIの判断は間違えることがあります。必ず根拠の文とリンク先を確かめてください。")
-        if len(docs) > MAX_AI_PAPERS:
-            st.warning(f"本文を取得できた論文は {len(docs)} 本ありますが、先頭の {MAX_AI_PAPERS} 本だけ判定します。")
-        if st.button("🤖 AIで判定する", type="primary", disabled=left == 0):
+    pending = st.session_state.get("ai_pending")
+    if result is None and pending is not None:
+        # 判定の途中。ボタンを押した回の実行だけで判定すると、途中で画面の更新（表の操作など）が届いたときに
+        # 実行が打ち切られて、選ぶ画面に戻ってしまう。そこで「判定する論文」を覚えておき、打ち切られても
+        # 次の実行で続きから判定する（判定済みの論文は保存した答えを使うので、回数は増えない）
+        runs = st.session_state["ai_pending_runs"] = st.session_state.get("ai_pending_runs", 0) + 1
+        if runs > 5:  # 何度も打ち切られる（想定外の問題がある）ときは、あきらめて選ぶ画面に戻す
+            st.session_state.pop("ai_pending", None)
+            st.session_state.pop("ai_pending_runs", None)
+            st.error("判定を最後まで終えられませんでした。もう一度試してください。")
+        else:
             bar = st.progress(0.0, text="準備中…")
 
             def progress(done, total, title):
                 bar.progress(done / total if total else 1.0,
                              text=f"（{done + 1}/{total}）{title[:60]}" if done < total else "完了しました")
 
-            st.session_state["ai"] = judge_papers(target, make_provider(api_key), progress)
+            st.session_state["ai"] = judge_papers([docs[i] for i in pending if i < len(docs)],
+                                                  make_provider(api_key), progress)
+            st.session_state.pop("ai_pending", None)
+            st.session_state.pop("ai_pending_runs", None)
+            st.rerun()
+    if result is None:
+        left = remaining_today()
+        st.write("取得した論文を AI（Google Gemini）が読み、**手に入れられる教育データセットがあるか**と、"
+                 "その**名前・URL・入手方法**を判定します。")
+        st.caption(
+            f"- 1回に判定するのは {MAX_AI_PAPERS} 本までです。1本あたり10秒ほどかかります。\n"
+            f"- 今日あと {left} 本まで判定できます（アプリを使う全員の合計）。\n"
+            "- Gemini には論文の本文の一部（URLの前後の文と、データについて書かれた文）とURLだけを送ります。"
+            "無料枠のため、送った内容が Google のサービス改善に使われることがあります。\n"
+            "- AIの判断は間違えることがあります。必ず根拠の文とリンク先を確かめてください。")
+        target = choose_papers(docs)
+        too_many = len(target) > MAX_AI_PAPERS
+        if too_many:
+            st.warning(f"選べるのは {MAX_AI_PAPERS} 本までです（今 {len(target)} 本を選択中）。チェックを減らしてください。")
+        if st.button(f"🤖 選んだ {len(target)} 本をAIで判定する", type="primary",
+                     disabled=left == 0 or too_many or not target):
+            st.session_state["ai_pending"] = target
             st.rerun()
         return
 
     show_ai_result(result)
+    # 結果を消して、選ぶ画面に戻る（一度判定した論文は保存した答えを使うので、回数は減らない）
+    if st.button("🔁 別の論文を選んで判定する"):
+        st.session_state.pop("ai", None)
+        st.rerun()
+
+
+def selection_key(docs: list[dict]) -> str:
+    """論文の組み合わせ（＝STEP 3 の実行）ごとに、チェックの状態を分けて覚えるための名前。"""
+    titles = "\n".join(d["title"] for d in docs)
+    return "ai_selected_" + hashlib.sha256(titles.encode("utf-8")).hexdigest()[:12]
+
+
+def choose_papers(docs: list[dict]) -> list[int]:
+    """判定する論文をチェックで選ぶ表。選んだ論文の番号（docs の中の位置）を返す。
+    最初は先頭の MAX_AI_PAPERS 本にチェックを入れておく。"""
+    batch_key = selection_key(docs)
+    selected: set[int] = st.session_state.setdefault(batch_key, set(range(min(MAX_AI_PAPERS, len(docs)))))
+    table = pd.DataFrame({
+        "selected": [i in selected for i in range(len(docs))],
+        "conference": [d["conference"] for d in docs],
+        "year": [d["year"] for d in docs],
+        "title": [d["title"] for d in docs],
+        "urls": [len(d["records"]) for d in docs],
+    })
+    edited = st.data_editor(
+        table, hide_index=True, width="stretch", height=min(400, 38 + 35 * len(table)),
+        disabled=["conference", "year", "title", "urls"],
+        column_config={
+            "selected": st.column_config.CheckboxColumn("判定する", width="small"),
+            "conference": st.column_config.TextColumn("会議・学会誌", width="small"),
+            "year": st.column_config.NumberColumn("年", format="%d", width="small"),
+            "title": st.column_config.TextColumn("タイトル", width="large"),
+            "urls": st.column_config.NumberColumn("URL数", width="small",
+                                                  help="URLが多い論文ほど、データの置き場所が書かれている可能性があります"),
+        },
+        key=batch_key + "_editor",
+    )
+    selected.clear()
+    selected.update(i for i, checked in edited["selected"].items() if checked)
+    return sorted(selected)
 
 
 def show_ai_result(result: dict) -> None:
