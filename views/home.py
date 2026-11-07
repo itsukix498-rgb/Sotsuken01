@@ -2,12 +2,11 @@
 
 import streamlit as st
 
-from ui_common import GUIDE_PAGE, UPLOAD_PAGE, flow, go_to_step, hero
+from ui_common import GUIDE_PAGE, UPLOAD_PAGE, go_to_step, hero
 
 hero("研究室メンバー向け・研究用", "Paper Data Finder",
      "論文を読んで、使える教育データセットを見つけるツールです。"
      "論文を集めて本文からURLを抜き出し、AIがデータセットの有無と入手方法を判定します。")
-flow()
 
 # 3つの入口。パソコンでは横に3つ、スマホでは縦に並ぶ
 search_col, upload_col, guide_col = st.columns(3)

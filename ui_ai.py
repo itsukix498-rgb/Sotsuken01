@@ -76,6 +76,19 @@ def remaining_today() -> int:
         return max(0, DAILY_LIMIT - c["count"])
 
 
+def remaining_html(left: int) -> str:
+    """「今日あと〇本」の表示（HTML）。"""
+    css = "pdf-remaining pdf-empty" if left == 0 else "pdf-remaining"
+    note = "今日の上限に達しました。日本時間17時ごろに戻ります" if left == 0 else "アプリを使う全員の合計"
+    return f'<div class="{css}">AIの判定：今日あと <b>{left}</b> 本<small>（{note}）</small></div>'
+
+
+@st.fragment(run_every=10)
+def remaining_badge() -> None:
+    """今日あと何本判定できるかを表示する。この部分だけ10秒ごとに数え直すので、ほかの人が使った分も反映される。"""
+    st.html(remaining_html(remaining_today()))
+
+
 def _use_one() -> bool:
     """1本分を数える。上限に達していれば False。"""
     c = _daily_counter()
@@ -222,9 +235,12 @@ def render_ai_section(docs: list[dict], state_key: str = "ai", require_consent: 
             st.session_state.pop(runs_key, None)
             st.error("判定を最後まで終えられませんでした。もう一度試してください。")
         else:
+            counter = st.empty()
             bar = st.progress(0.0, text="準備中…")
 
             def progress(done, total, title):
+                # 1本判定するごとに、残りの本数を数え直して表示する
+                counter.html(remaining_html(remaining_today()))
                 bar.progress(done / total if total else 1.0,
                              text=f"（{done + 1}/{total}）{title[:60]}" if done < total else "完了しました")
 
@@ -236,9 +252,9 @@ def render_ai_section(docs: list[dict], state_key: str = "ai", require_consent: 
 
     if result is None:
         left = remaining_today()
+        remaining_badge()
         st.caption(
             f"- 1回に判定するのは {MAX_AI_PAPERS} 本までです。1本あたり10秒ほどかかります。\n"
-            f"- 今日あと {left} 本まで判定できます（アプリを使う全員の合計）。\n"
             "- Gemini には論文の本文の一部（URLの前後の文と、データについて書かれた文）とURLだけを送ります。"
             "無料枠のため、送った内容が Google のサービス改善に使われることがあります。\n"
             "- AIの判断は間違えることがあります。必ず根拠の文とリンク先を確かめてください。")
@@ -261,6 +277,7 @@ def render_ai_section(docs: list[dict], state_key: str = "ai", require_consent: 
             st.rerun()
         return
 
+    remaining_badge()
     show_ai_result(result)
     # 結果を消して、選ぶ画面に戻る（一度判定した論文は保存した答えを使うので、回数は減らない）
     if st.button("別の論文を選んで判定する", key=state_key + "_again"):
@@ -302,7 +319,7 @@ def choose_papers(docs: list[dict], key: str) -> list[int]:
         pd.DataFrame(rows)[columns], hide_index=True, width="stretch", height=min(400, 38 + 35 * len(rows)),
         disabled=[c for c in columns if c != "selected"],
         column_config={
-            "selected": st.column_config.CheckboxColumn("判定する", width="small"),
+            "selected": st.column_config.CheckboxColumn("判定する", width=90),
             "conference": st.column_config.TextColumn("会議・学会誌", width="small"),
             "year": st.column_config.NumberColumn("年", format="%d", width="small"),
             "title": st.column_config.TextColumn("タイトル", width="large"),

@@ -13,13 +13,11 @@ from collect_papers import (
     polite_sleep,
 )
 from extract_urls import PdfOpenError, extract_page_texts, extract_urls_from_pdf, open_pdf_bytes
-from ui_ai import gemini_api_key, split_by_language
-from ui_common import csv_bytes, go_to_step, show_url_table, step_header, url_rows
+from ui_ai import gemini_api_key, remaining_badge, split_by_language
+from ui_common import MAX_BATCH, csv_bytes, go_to_step, page_title, show_url_table, step_header, url_rows
 
-# 1回にまとめて処理するPDFの上限（相手サーバーへの負担と、公開サーバーの処理時間を考えて）
-MAX_BATCH = 30
 
-st.title("URLを抽出")
+page_title("STEP 3 / Extract", "URLを抽出")
 step_header(3)
 
 rows = st.session_state.get("papers")
@@ -114,6 +112,7 @@ if docs and gemini_api_key():
                  "**手に入れられる教育データセット**と、その**名前・URL・入手方法**を見つけます。")
         st.caption(f"AIで判定できる論文：{len(eligible)} 本"
                    + (f"（日本語など英語以外の論文 {len(excluded)} 本は対象外）" if excluded else ""))
+        remaining_badge()
         if st.button("AIでデータセットを判定する →", type="primary", width="stretch",
                      disabled=not eligible, key="to_step4"):
             go_to_step(4)
