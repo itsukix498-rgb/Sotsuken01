@@ -280,6 +280,9 @@ def test_step4_ai_judge(fake_ai):
     # 判定の後も、今日あと何本判定できるかを表示する
     assert "今日あと" in _texts(at)
     assert at.session_state["ai"]["datasets"][0]["name"] == "Fake logs"
+    # 根拠の文が本文にあるかを確かめ、ページと一緒に表示する
+    assert at.session_state["ai"]["papers"][0]["evidence_check"] == "本文の 1 ページにあり"
+    assert at.session_state["ai"]["datasets"][0]["evidence_check"] == "本文の 1 ページにあり"
     assert at.session_state["ai"]["urls"][0]["url"] == "https://osf.io/abcde"
 
     # 結果を消して選び直すと、同じ論文は保存した答えを使い、AIを呼ばない
