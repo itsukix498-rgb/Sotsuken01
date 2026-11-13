@@ -22,6 +22,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from research.evidence import check_evidence
 from research.judge import STATUS_OK, Judge, load_prompt
 from research.llm import LLMError
 from research.llm.base import DailyLimitReached
@@ -137,17 +138,22 @@ def judge_papers(docs: list[dict], provider, progress=None) -> dict:
 
         base = {"conference": doc["conference"], "year": doc["year"], "title": doc["title"]}
         if j.status != STATUS_OK:
-            papers.append({**base, "shares": "判定不能", "kind": "不明", "n_datasets": 0, "evidence": ""})
+            papers.append({**base, "shares": "判定不能", "kind": "不明", "n_datasets": 0, "evidence": "",
+                           "evidence_check": "—"})
             continue
         answer = j.answer
         found = answer.get("datasets") or []
+        # 根拠の文が論文の本文に本当にあるかを確かめ、あったページと一緒に表示する
+        evidence = answer["paper"].get("evidence", "")
         papers.append({**base, "shares": SHARES_LABELS.get(answer["paper"]["shares_dataset"], "不明"),
                        "kind": four_class(answer["paper"]["shares_dataset"], [d["availability"] for d in found]),
-                       "n_datasets": len(found), "evidence": answer["paper"].get("evidence", "")})
+                       "n_datasets": len(found), "evidence": evidence,
+                       "evidence_check": check_evidence(evidence, doc["pages"]).label})
         for d in found:
             datasets.append({**base, "name": d["name"], "url": d.get("url") or "",
                              "availability": AVAILABILITY_LABELS.get(d["availability"], d["availability"]),
-                             "evidence": d.get("evidence", "")})
+                             "evidence": d.get("evidence", ""),
+                             "evidence_check": check_evidence(d.get("evidence", ""), doc["pages"]).label})
         flags = {u["id"]: u for u in answer.get("urls", [])}
         for u in item.urls:
             f = flags.get(u.id, {})
@@ -333,6 +339,13 @@ def choose_papers(docs: list[dict], key: str) -> list[int]:
     return sorted(selected)
 
 
+def _with_check(df: pd.DataFrame) -> pd.DataFrame:
+    """「根拠の確認」の列がない結果（この機能を入れる前に判定した結果）にも、空の列を足す。"""
+    if "evidence_check" not in df.columns:
+        df = df.assign(evidence_check="—")
+    return df
+
+
 def show_ai_result(result: dict) -> None:
     if result["stopped"]:
         st.warning(result["stopped"])
@@ -357,8 +370,9 @@ def show_ai_result(result: dict) -> None:
                                               f"データセット（{len(result['datasets'])}）",
                                               f"URL（{len(result['urls'])}）"])
     with tab_papers:
-        st.caption("論文ごとの判定です。「根拠の文」は、AIが判断の手がかりにした論文中の文です。")
-        st.dataframe(papers[meta + ["title", "shares", "kind", "n_datasets", "evidence"]],
+        st.caption("論文ごとの判定です。「根拠の文」は、AIが判断の手がかりにした論文中の文です。"
+                   "「根拠の確認」は、その文が論文の本文に本当にあるかをプログラムで確かめた結果です。")
+        st.dataframe(_with_check(papers)[meta + ["title", "shares", "kind", "n_datasets", "evidence", "evidence_check"]],
                      hide_index=True, width="stretch", column_config={
                          **common,
                          "title": st.column_config.TextColumn("タイトル", width="large"),
@@ -366,11 +380,13 @@ def show_ai_result(result: dict) -> None:
                          "kind": st.column_config.TextColumn("分類", width="small"),
                          "n_datasets": st.column_config.NumberColumn("データセット数", width="small"),
                          "evidence": st.column_config.TextColumn("根拠の文", width="large"),
+                         "evidence_check": st.column_config.TextColumn("根拠の確認", width="medium"),
                      })
     with tab_data:
         st.caption("見つかったデータセットの名前・URL・入手方法（公開／要ログイン／要申請）です。")
         if result["datasets"]:
-            st.dataframe(pd.DataFrame(result["datasets"])[meta + ["title", "name", "url", "availability", "evidence"]],
+            st.dataframe(_with_check(pd.DataFrame(result["datasets"]))[
+                             meta + ["title", "name", "url", "availability", "evidence", "evidence_check"]],
                          hide_index=True, width="stretch", column_config={
                              **common,
                              "title": st.column_config.TextColumn("論文", width="medium"),
@@ -378,6 +394,7 @@ def show_ai_result(result: dict) -> None:
                              "url": st.column_config.LinkColumn("URL", width="medium"),
                              "availability": st.column_config.TextColumn("入手方法", width="small"),
                              "evidence": st.column_config.TextColumn("根拠の文", width="large"),
+                             "evidence_check": st.column_config.TextColumn("根拠の確認", width="medium"),
                          })
             st.caption("URLが空のものは、論文に名前と参考文献だけが書かれていて、リンクがなかったものです。")
         else:
